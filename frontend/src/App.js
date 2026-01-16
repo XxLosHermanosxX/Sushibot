@@ -341,7 +341,7 @@ function App() {
     } catch (err) {
       setConfigMessage({ type: 'error', text: '❌ Erro de conexão' });
     } finally {
-      setTestingGemini(false);
+      setTestingAI(false);
     }
   };
 
