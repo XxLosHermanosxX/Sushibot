@@ -49,7 +49,7 @@ def load_config():
             with open(CONFIG_FILE) as f:
                 saved = json.load(f)
                 default_config.update(saved)
-        except:
+        except Exception:
             pass
     
     return default_config
@@ -166,13 +166,13 @@ async def broadcast_message(message: dict):
     for client in websocket_clients:
         try:
             await client.send_json(message)
-        except:
+        except Exception:
             disconnected.append(client)
     
     for client in disconnected:
         try:
             websocket_clients.remove(client)
-        except:
+        except Exception:
             pass
 
 async def gerar_resposta_gemini(chat_id: str, mensagem: str) -> str:
@@ -439,7 +439,7 @@ async def update_whatsapp_status(request: Request):
     
     try:
         status = await request.json()
-    except:
+    except Exception:
         return {"success": False, "error": "Invalid JSON"}
     
     if "connected" in status:
@@ -506,7 +506,7 @@ async def websocket_endpoint(websocket: WebSocket):
             },
             "conversas": list(conversas.values())
         })
-    except:
+    except Exception:
         pass
     
     try:
@@ -516,14 +516,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 cmd = json.loads(data)
                 if cmd.get("type") == "ping":
                     await websocket.send_json({"type": "pong"})
-            except:
+            except Exception:
                 pass
     except WebSocketDisconnect:
         pass
     finally:
         try:
             websocket_clients.remove(websocket)
-        except:
+        except Exception:
             pass
 
 # ==================== STARTUP ====================
