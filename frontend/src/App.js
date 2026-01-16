@@ -1146,7 +1146,15 @@ function App() {
           <div className="space-y-2 text-xs lg:text-sm">
             <div className="flex justify-between">
               <span className="text-gray-400">Versão</span>
-              <span className="text-white">1.1.0 (PWA)</span>
+              <span className="text-white">2.0.0 (PWA)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Provedor IA</span>
+              <span className="text-white">{appConfig.provider === 'openrouter' ? 'OpenRouter' : 'Google Gemini'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Modelo</span>
+              <span className="text-white text-right max-w-[60%] truncate">{appConfig.selected_model?.split('/').pop()}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Negócio</span>
@@ -1155,7 +1163,7 @@ function App() {
             <div className="flex justify-between">
               <span className="text-gray-400">Site</span>
               <a href={appConfig.site_url} target="_blank" rel="noopener noreferrer" className="text-red-400">
-                {appConfig.site_url}
+                {appConfig.site_url?.replace('https://', '')}
               </a>
             </div>
             <div className="flex justify-between">
