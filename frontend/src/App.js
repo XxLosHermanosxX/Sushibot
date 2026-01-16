@@ -17,20 +17,22 @@ import {
   ToggleLeft,
   ToggleRight,
   Phone,
-  ExternalLink
+  Download,
+  Bell,
+  BellOff,
+  Menu,
+  X,
+  Smartphone,
+  Share
 } from 'lucide-react';
 
 // Determinar URL do backend baseado no ambiente
 const getBackendUrl = () => {
-  // Se estiver rodando em localhost, usar localhost
   if (window.location.hostname === 'localhost') {
     return 'http://localhost:8001';
   }
-  // Caso contrário, usar URL do .env ou construir baseado no hostname
   const envUrl = process.env.REACT_APP_BACKEND_URL;
   if (envUrl) return envUrl;
-  
-  // Fallback: usar mesmo hostname com porta 8001 ou /api
   return window.location.origin;
 };
 
@@ -49,7 +51,74 @@ function App() {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // Detectar se está instalado como PWA
+  useEffect(() => {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
+      || window.navigator.standalone 
+      || document.referrer.includes('android-app://');
+    setIsInstalled(isStandalone);
+    
+    // Verificar permissão de notificações
+    if ('Notification' in window) {
+      setNotificationsEnabled(Notification.permission === 'granted');
+    }
+  }, []);
+
+  // Capturar evento de instalação
+  useEffect(() => {
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      if (!isInstalled) {
+        setShowInstallBanner(true);
+      }
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    };
+  }, [isInstalled]);
+
+  // Função para instalar o app
+  const handleInstall = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+        setShowInstallBanner(false);
+      }
+      setInstallPrompt(null);
+    }
+  };
+
+  // Função para solicitar permissão de notificações
+  const requestNotifications = async () => {
+    if ('Notification' in window && 'serviceWorker' in navigator) {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          setNotificationsEnabled(true);
+          // Mostrar notificação de teste
+          new Notification('Sushi Aki Bot', {
+            body: 'Notificações ativadas! Você receberá alertas de novas mensagens.',
+            icon: '/icons/icon-192x192.png'
+          });
+        }
+      } catch (err) {
+        console.error('Erro ao solicitar notificações:', err);
+      }
+    }
+  };
 
   // Buscar status
   const fetchStatus = useCallback(async () => {
@@ -62,7 +131,7 @@ function App() {
       }
     } catch (err) {
       console.error('Erro ao buscar status:', err);
-      setError('Erro de conexão com o servidor');
+      setError('Erro de conexão');
     } finally {
       setLoading(false);
     }
@@ -74,26 +143,41 @@ function App() {
       const response = await fetch(`${BACKEND_URL}/api/conversas`);
       if (response.ok) {
         const data = await response.json();
-        setConversas(data.conversas || []);
+        const newConversas = data.conversas || [];
         
-        // Atualizar chat selecionado se existir
+        // Verificar novas mensagens para notificação
+        if (notificationsEnabled && conversas.length > 0) {
+          newConversas.forEach(conv => {
+            const oldConv = conversas.find(c => c.chat_id === conv.chat_id);
+            if (oldConv && conv.mensagens?.length > oldConv.mensagens?.length) {
+              const lastMsg = conv.mensagens[conv.mensagens.length - 1];
+              if (lastMsg.from === 'cliente') {
+                new Notification('Nova mensagem - Sushi Aki', {
+                  body: `${conv.nome_cliente}: ${lastMsg.text.substring(0, 50)}...`,
+                  icon: '/icons/icon-192x192.png',
+                  tag: conv.chat_id
+                });
+              }
+            }
+          });
+        }
+        
+        setConversas(newConversas);
+        
         if (selectedChat) {
-          const updated = data.conversas?.find(c => c.chat_id === selectedChat.chat_id);
-          if (updated) {
-            setSelectedChat(updated);
-          }
+          const updated = newConversas.find(c => c.chat_id === selectedChat.chat_id);
+          if (updated) setSelectedChat(updated);
         }
       }
     } catch (err) {
       console.error('Erro ao buscar conversas:', err);
     }
-  }, [selectedChat]);
+  }, [selectedChat, conversas, notificationsEnabled]);
 
   useEffect(() => {
     fetchStatus();
     fetchConversas();
     
-    // Polling a cada 2 segundos
     const interval = setInterval(() => {
       fetchStatus();
       fetchConversas();
@@ -102,12 +186,11 @@ function App() {
     return () => clearInterval(interval);
   }, [fetchStatus, fetchConversas]);
 
-  // Scroll para última mensagem
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedChat?.mensagens]);
 
-  // Enviar mensagem manual
+  // Enviar mensagem
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedChat) return;
     
@@ -123,7 +206,7 @@ function App() {
       setNewMessage('');
       fetchConversas();
     } catch (err) {
-      console.error('Erro ao enviar mensagem:', err);
+      console.error('Erro ao enviar:', err);
     }
   };
 
@@ -133,23 +216,19 @@ function App() {
       await fetch(`${BACKEND_URL}/api/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          auto_reply: !status.bot_config.auto_reply
-        })
+        body: JSON.stringify({ auto_reply: !status.bot_config.auto_reply })
       });
       fetchStatus();
     } catch (err) {
-      console.error('Erro ao atualizar config:', err);
+      console.error('Erro:', err);
     }
   };
 
-  // Assumir/Liberar conversa
+  // Takeover
   const toggleHumanTakeover = async (chatId, isHuman) => {
     try {
       const endpoint = isHuman ? 'release' : 'takeover';
-      await fetch(`${BACKEND_URL}/api/${endpoint}/${chatId}`, {
-        method: 'POST'
-      });
+      await fetch(`${BACKEND_URL}/api/${endpoint}/${chatId}`, { method: 'POST' });
       fetchConversas();
     } catch (err) {
       console.error('Erro:', err);
@@ -159,42 +238,167 @@ function App() {
   // Testar Gemini
   const testGemini = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/test-gemini`, {
-        method: 'POST'
-      });
+      const response = await fetch(`${BACKEND_URL}/api/test-gemini`, { method: 'POST' });
       const data = await response.json();
-      alert(data.success ? `✅ Gemini OK: ${data.response}` : `❌ Erro: ${data.error}`);
+      alert(data.success ? `✅ OK: ${data.response}` : `❌ ${data.error}`);
     } catch (err) {
-      alert('❌ Erro ao testar Gemini');
+      alert('❌ Erro ao testar');
     }
   };
 
-  // Formatar data
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return new Date(timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Componente de Status Badge
+  // Detectar iOS para instrução específica
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isAndroid = /Android/.test(navigator.userAgent);
+
+  // Status Badge
   const StatusBadge = ({ connected }) => (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
+    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
       connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
     }`}>
-      {connected ? <Wifi size={16} /> : <WifiOff size={16} />}
-      {connected ? 'Conectado' : 'Desconectado'}
+      {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
+      {connected ? 'Online' : 'Offline'}
     </div>
   );
 
-  // Sidebar
+  // Banner de instalação
+  const InstallBanner = () => {
+    if (isInstalled || !showInstallBanner) return null;
+    
+    return (
+      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-red-500 to-pink-500 p-4 z-50 safe-area-bottom">
+        <div className="flex items-center justify-between max-w-lg mx-auto">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl">🍣</div>
+            <div>
+              <p className="font-bold text-white text-sm">Instalar Sushi Aki</p>
+              <p className="text-white/80 text-xs">Acesse mais rápido!</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowInstallBanner(false)}
+              className="p-2 text-white/70 hover:text-white"
+            >
+              <X size={20} />
+            </button>
+            {installPrompt ? (
+              <button
+                onClick={handleInstall}
+                className="bg-white text-red-500 px-4 py-2 rounded-full text-sm font-bold"
+              >
+                Instalar
+              </button>
+            ) : isIOS ? (
+              <button
+                onClick={() => alert('Toque em "Compartilhar" ⬆️ e depois "Adicionar à Tela de Início"')}
+                className="bg-white text-red-500 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-1"
+              >
+                <Share size={16} /> Instalar
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Mobile Header
+  const MobileHeader = () => (
+    <div className="lg:hidden fixed top-0 left-0 right-0 bg-gray-900 border-b border-gray-700 z-40 safe-area-top">
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 hover:bg-gray-800 rounded-lg"
+          >
+            {mobileMenuOpen ? <X size={24} className="text-white" /> : <Menu size={24} className="text-white" />}
+          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🍣</span>
+            <span className="font-bold text-white">Sushi Aki</span>
+          </div>
+        </div>
+        <StatusBadge connected={status.whatsapp.connected} />
+      </div>
+    </div>
+  );
+
+  // Mobile Menu
+  const MobileMenu = () => {
+    if (!mobileMenuOpen) return null;
+    
+    return (
+      <div className="lg:hidden fixed inset-0 bg-black/50 z-30" onClick={() => setMobileMenuOpen(false)}>
+        <div className="absolute top-16 left-0 w-64 bg-gray-900 h-full border-r border-gray-700 safe-area-top" onClick={e => e.stopPropagation()}>
+          <nav className="p-4">
+            <ul className="space-y-2">
+              {[
+                { id: 'dashboard', icon: QrCode, label: 'Dashboard' },
+                { id: 'conversas', icon: MessageCircle, label: 'Conversas', badge: conversas.length },
+                { id: 'configuracoes', icon: Settings, label: 'Configurações' }
+              ].map(item => (
+                <li key={item.id}>
+                  <button
+                    onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                      activeTab === item.id 
+                        ? 'bg-red-500 text-white' 
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    }`}
+                  >
+                    <item.icon size={20} />
+                    {item.label}
+                    {item.badge > 0 && (
+                      <span className="ml-auto bg-white/20 px-2 py-0.5 rounded-full text-xs">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            
+            {/* Botões de instalação e notificação */}
+            <div className="mt-6 pt-6 border-t border-gray-700 space-y-3">
+              {!isInstalled && (
+                <button
+                  onClick={isIOS ? () => alert('Toque em "Compartilhar" e "Adicionar à Tela de Início"') : handleInstall}
+                  className="w-full flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-red-500 to-pink-500 rounded-xl text-white font-medium"
+                >
+                  <Download size={20} />
+                  Instalar App
+                </button>
+              )}
+              
+              <button
+                onClick={notificationsEnabled ? () => {} : requestNotifications}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium ${
+                  notificationsEnabled 
+                    ? 'bg-green-500/20 text-green-400' 
+                    : 'bg-gray-800 text-gray-400 hover:text-white'
+                }`}
+              >
+                {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
+                {notificationsEnabled ? 'Notificações Ativas' : 'Ativar Notificações'}
+              </button>
+            </div>
+          </nav>
+        </div>
+      </div>
+    );
+  };
+
+  // Sidebar Desktop
   const Sidebar = () => (
-    <div className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col">
-      {/* Logo */}
+    <div className="hidden lg:flex w-64 bg-gray-900 border-r border-gray-700 flex-col">
       <div className="p-6 border-b border-gray-700">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center text-xl">
-            🍣
-          </div>
+          <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center text-xl">🍣</div>
           <div>
             <h1 className="font-bold text-lg text-white">Sushi Aki</h1>
             <p className="text-xs text-gray-400">Bot WhatsApp</p>
@@ -202,60 +406,57 @@ function App() {
         </div>
       </div>
       
-      {/* Navigation */}
       <nav className="flex-1 p-4">
         <ul className="space-y-2">
-          <li>
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              data-testid="nav-dashboard"
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'dashboard' 
-                  ? 'bg-red-500 text-white' 
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <QrCode size={20} />
-              Dashboard
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveTab('conversas')}
-              data-testid="nav-conversas"
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'conversas' 
-                  ? 'bg-red-500 text-white' 
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <MessageCircle size={20} />
-              Conversas
-              {conversas.length > 0 && (
-                <span className="ml-auto bg-white/20 px-2 py-0.5 rounded-full text-xs">
-                  {conversas.length}
-                </span>
-              )}
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveTab('configuracoes')}
-              data-testid="nav-config"
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'configuracoes' 
-                  ? 'bg-red-500 text-white' 
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Settings size={20} />
-              Configurações
-            </button>
-          </li>
+          {[
+            { id: 'dashboard', icon: QrCode, label: 'Dashboard' },
+            { id: 'conversas', icon: MessageCircle, label: 'Conversas', badge: conversas.length },
+            { id: 'configuracoes', icon: Settings, label: 'Configurações' }
+          ].map(item => (
+            <li key={item.id}>
+              <button
+                onClick={() => setActiveTab(item.id)}
+                data-testid={`nav-${item.id}`}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                  activeTab === item.id 
+                    ? 'bg-red-500 text-white' 
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                }`}
+              >
+                <item.icon size={20} />
+                {item.label}
+                {item.badge > 0 && (
+                  <span className="ml-auto bg-white/20 px-2 py-0.5 rounded-full text-xs">{item.badge}</span>
+                )}
+              </button>
+            </li>
+          ))}
         </ul>
+        
+        {/* Botões extras */}
+        <div className="mt-6 pt-6 border-t border-gray-700 space-y-3">
+          {!isInstalled && installPrompt && (
+            <button
+              onClick={handleInstall}
+              className="w-full flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-red-500 to-pink-500 rounded-xl text-white font-medium text-sm"
+            >
+              <Download size={18} />
+              Instalar App
+            </button>
+          )}
+          
+          {!notificationsEnabled && (
+            <button
+              onClick={requestNotifications}
+              className="w-full flex items-center gap-3 px-4 py-3 bg-gray-800 rounded-xl text-gray-400 hover:text-white text-sm"
+            >
+              <Bell size={18} />
+              Ativar Notificações
+            </button>
+          )}
+        </div>
       </nav>
       
-      {/* Status */}
       <div className="p-4 border-t border-gray-700">
         <StatusBadge connected={status.whatsapp.connected} />
       </div>
@@ -264,61 +465,57 @@ function App() {
 
   // Dashboard View
   const DashboardView = () => (
-    <div className="p-8">
-      <h2 className="text-2xl font-bold mb-6 text-white">Dashboard</h2>
+    <div className="p-4 lg:p-8">
+      <h2 className="text-xl lg:text-2xl font-bold mb-6 text-white">Dashboard</h2>
       
       {error && (
-        <div className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400">
+        <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400 text-sm">
           {error}
         </div>
       )}
       
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="bg-gray-800 rounded-2xl p-4 lg:p-6 border border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-400 text-sm">Status WhatsApp</p>
-              <p className="text-xl font-bold mt-1 text-white">
-                {status.whatsapp.connected ? 'Online' : status.whatsapp.status_text}
+              <p className="text-gray-400 text-xs lg:text-sm">Status</p>
+              <p className="text-lg lg:text-xl font-bold mt-1 text-white">
+                {status.whatsapp.connected ? 'Online' : 'Offline'}
               </p>
             </div>
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+            <div className={`w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center ${
               status.whatsapp.connected ? 'bg-green-500/20' : 'bg-yellow-500/20'
             }`}>
-              <Phone size={24} className={
-                status.whatsapp.connected ? 'text-green-400' : 'text-yellow-400'
-              } />
+              <Phone size={20} className={status.whatsapp.connected ? 'text-green-400' : 'text-yellow-400'} />
             </div>
           </div>
         </div>
         
-        <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="bg-gray-800 rounded-2xl p-4 lg:p-6 border border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-400 text-sm">Conversas Ativas</p>
-              <p className="text-xl font-bold mt-1 text-white">{conversas.length}</p>
+              <p className="text-gray-400 text-xs lg:text-sm">Conversas</p>
+              <p className="text-lg lg:text-xl font-bold mt-1 text-white">{conversas.length}</p>
             </div>
-            <div className="w-12 h-12 bg-red-500/20 rounded-xl flex items-center justify-center">
-              <Users size={24} className="text-red-400" />
+            <div className="w-10 h-10 lg:w-12 lg:h-12 bg-red-500/20 rounded-xl flex items-center justify-center">
+              <Users size={20} className="text-red-400" />
             </div>
           </div>
         </div>
         
-        <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="bg-gray-800 rounded-2xl p-4 lg:p-6 border border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-400 text-sm">Auto Resposta</p>
-              <p className="text-xl font-bold mt-1 text-white">
+              <p className="text-gray-400 text-xs lg:text-sm">Auto Resposta</p>
+              <p className="text-lg lg:text-xl font-bold mt-1 text-white">
                 {status.bot_config.auto_reply ? 'Ativada' : 'Desativada'}
               </p>
             </div>
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+            <div className={`w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center ${
               status.bot_config.auto_reply ? 'bg-teal-500/20' : 'bg-gray-500/20'
             }`}>
-              <Bot size={24} className={
-                status.bot_config.auto_reply ? 'text-teal-400' : 'text-gray-400'
-              } />
+              <Bot size={20} className={status.bot_config.auto_reply ? 'text-teal-400' : 'text-gray-400'} />
             </div>
           </div>
         </div>
@@ -326,60 +523,83 @@ function App() {
       
       {/* QR Code Section */}
       {!status.whatsapp.connected && (
-        <div className="bg-gray-800 rounded-2xl p-8 border border-gray-700">
+        <div className="bg-gray-800 rounded-2xl p-6 lg:p-8 border border-gray-700">
           <div className="text-center">
-            <h3 className="text-xl font-bold mb-4 text-white">Conectar WhatsApp</h3>
-            <p className="text-gray-400 mb-6">
-              Escaneie o QR Code abaixo com o WhatsApp do celular
+            <h3 className="text-lg lg:text-xl font-bold mb-4 text-white">Conectar WhatsApp</h3>
+            <p className="text-gray-400 mb-6 text-sm">
+              Escaneie o QR Code com seu WhatsApp
             </p>
             
             {status.whatsapp.qr_code ? (
-              <div className="inline-block bg-white p-4 rounded-2xl">
+              <div className="inline-block bg-white p-3 lg:p-4 rounded-2xl">
                 <img 
                   src={status.whatsapp.qr_code} 
                   alt="QR Code" 
-                  className="w-64 h-64"
+                  className="w-48 h-48 lg:w-64 lg:h-64"
                   data-testid="qr-code-image"
                 />
               </div>
             ) : (
               <div className="inline-flex flex-col items-center gap-4">
-                <div className="w-64 h-64 bg-gray-700 rounded-2xl flex items-center justify-center">
+                <div className="w-48 h-48 lg:w-64 lg:h-64 bg-gray-700 rounded-2xl flex items-center justify-center">
                   <RefreshCw size={32} className="text-gray-500 animate-spin" />
                 </div>
-                <p className="text-gray-500">Aguardando QR Code...</p>
+                <p className="text-gray-500 text-sm">Aguardando QR Code...</p>
               </div>
             )}
             
-            <div className="mt-6 text-sm text-gray-400">
+            <div className="mt-6 text-xs lg:text-sm text-gray-400">
               <p className="font-medium mb-2">Como conectar:</p>
               <ol className="text-left max-w-xs mx-auto space-y-1">
-                <li>1. Abra o WhatsApp no celular</li>
-                <li>2. Vá em Configurações → Aparelhos conectados</li>
-                <li>3. Toque em "Conectar um aparelho"</li>
-                <li>4. Escaneie este QR Code</li>
+                <li>1. Abra o WhatsApp</li>
+                <li>2. Configurações → Aparelhos conectados</li>
+                <li>3. Conectar um aparelho</li>
+                <li>4. Escaneie o QR Code</li>
               </ol>
             </div>
           </div>
         </div>
       )}
       
-      {/* Connected Status */}
       {status.whatsapp.connected && (
-        <div className="bg-gray-800 rounded-2xl p-8 border border-green-500/30">
+        <div className="bg-gray-800 rounded-2xl p-6 lg:p-8 border border-green-500/30">
           <div className="text-center">
-            <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Check size={40} className="text-green-400" />
+            <div className="w-16 h-16 lg:w-20 lg:h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Check size={32} className="text-green-400" />
             </div>
-            <h3 className="text-xl font-bold text-green-400 mb-2">WhatsApp Conectado!</h3>
-            <p className="text-gray-400">
-              O bot está ativo e respondendo mensagens automaticamente
-            </p>
-            {status.whatsapp.phone_number && (
-              <p className="text-gray-500 mt-2 text-sm">
-                Número: {status.whatsapp.phone_number}
+            <h3 className="text-lg lg:text-xl font-bold text-green-400 mb-2">WhatsApp Conectado!</h3>
+            <p className="text-gray-400 text-sm">O bot está respondendo automaticamente</p>
+          </div>
+        </div>
+      )}
+      
+      {/* Instruções de instalação mobile */}
+      {!isInstalled && (
+        <div className="mt-6 bg-gradient-to-r from-red-500/20 to-pink-500/20 rounded-2xl p-6 border border-red-500/30">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-red-500 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Smartphone size={24} className="text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white mb-2">Instale o App no seu celular!</h3>
+              <p className="text-gray-400 text-sm mb-4">
+                {isIOS 
+                  ? 'Toque em "Compartilhar" ⬆️ e depois "Adicionar à Tela de Início"'
+                  : isAndroid
+                    ? 'Toque no menu ⋮ e "Instalar app" ou "Adicionar à tela inicial"'
+                    : 'Clique no botão abaixo para instalar'
+                }
               </p>
-            )}
+              {installPrompt && (
+                <button
+                  onClick={handleInstall}
+                  className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-xl font-medium text-sm flex items-center gap-2"
+                >
+                  <Download size={18} />
+                  Instalar Agora
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -389,9 +609,9 @@ function App() {
   // Conversas View
   const ConversasView = () => (
     <div className="flex h-full">
-      {/* Lista de Conversas */}
-      <div className={`w-80 bg-gray-900 border-r border-gray-700 flex flex-col ${
-        selectedChat ? 'hidden md:flex' : 'flex'
+      {/* Lista */}
+      <div className={`w-full lg:w-80 bg-gray-900 border-r border-gray-700 flex flex-col ${
+        selectedChat ? 'hidden lg:flex' : 'flex'
       }`}>
         <div className="p-4 border-b border-gray-700">
           <h3 className="font-bold text-white">Conversas</h3>
@@ -402,8 +622,8 @@ function App() {
           {conversas.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               <MessageCircle size={48} className="mx-auto mb-4 opacity-50" />
-              <p>Nenhuma conversa ainda</p>
-              <p className="text-sm mt-2">As conversas aparecerão aqui quando clientes enviarem mensagens</p>
+              <p>Nenhuma conversa</p>
+              <p className="text-sm mt-2">As conversas aparecerão aqui</p>
             </div>
           ) : (
             conversas.map((conversa) => (
@@ -421,14 +641,14 @@ function App() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <p className="font-medium truncate text-white">{conversa.nome_cliente}</p>
+                      <p className="font-medium truncate text-white text-sm">{conversa.nome_cliente}</p>
                       {conversa.humano_ativo && (
                         <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
                           Humano
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-400 truncate">
+                    <p className="text-xs text-gray-400 truncate">
                       {conversa.mensagens?.slice(-1)[0]?.text || 'Nova conversa'}
                     </p>
                   </div>
@@ -439,68 +659,58 @@ function App() {
         </div>
       </div>
       
-      {/* Chat View */}
-      <div className={`flex-1 flex flex-col bg-gray-900 ${
-        selectedChat ? 'flex' : 'hidden md:flex'
-      }`}>
+      {/* Chat */}
+      <div className={`flex-1 flex flex-col bg-gray-900 ${selectedChat ? 'flex' : 'hidden lg:flex'}`}>
         {selectedChat ? (
           <>
-            {/* Chat Header */}
-            <div className="p-4 border-b border-gray-700 flex items-center justify-between bg-gray-800">
+            <div className="p-3 lg:p-4 border-b border-gray-700 flex items-center justify-between bg-gray-800">
               <div className="flex items-center gap-3">
                 <button 
                   onClick={() => setSelectedChat(null)}
-                  className="md:hidden p-2 hover:bg-gray-700 rounded-lg text-white"
+                  className="lg:hidden p-2 hover:bg-gray-700 rounded-lg text-white"
                 >
                   <ArrowLeft size={20} />
                 </button>
-                <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center">
-                  <User size={20} className="text-red-400" />
+                <div className="w-8 h-8 lg:w-10 lg:h-10 bg-red-500/20 rounded-full flex items-center justify-center">
+                  <User size={16} className="text-red-400" />
                 </div>
                 <div>
-                  <p className="font-medium text-white">{selectedChat.nome_cliente}</p>
+                  <p className="font-medium text-white text-sm">{selectedChat.nome_cliente}</p>
                   <p className="text-xs text-gray-400">
-                    {selectedChat.humano_ativo ? '🧑 Humano ativo' : '🤖 Bot respondendo'}
+                    {selectedChat.humano_ativo ? '🧑 Humano' : '🤖 Bot'}
                   </p>
                 </div>
               </div>
               
               <button
                 onClick={() => toggleHumanTakeover(selectedChat.chat_id, selectedChat.humano_ativo)}
-                data-testid="toggle-takeover"
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
                   selectedChat.humano_ativo
-                    ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-                    : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-yellow-500/20 text-yellow-400'
                 }`}
               >
-                {selectedChat.humano_ativo ? 'Devolver ao Bot' : 'Assumir Conversa'}
+                {selectedChat.humano_ativo ? 'Devolver' : 'Assumir'}
               </button>
             </div>
             
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {selectedChat.mensagens?.map((msg, idx) => (
-                <div
-                  key={msg.id || idx}
-                  className={`flex ${msg.from === 'cliente' ? 'justify-start' : 'justify-end'}`}
-                >
-                  <div className={`max-w-[70%] rounded-2xl px-4 py-3 ${
+                <div key={msg.id || idx} className={`flex ${msg.from === 'cliente' ? 'justify-start' : 'justify-end'}`}>
+                  <div className={`max-w-[85%] lg:max-w-[70%] rounded-2xl px-4 py-2 ${
                     msg.from === 'cliente'
                       ? 'bg-gray-800 border border-gray-700 text-white'
                       : msg.from === 'bot'
                         ? 'bg-red-500 text-white'
                         : 'bg-teal-500 text-white'
                   }`}>
-                    <p className="whitespace-pre-wrap">{msg.text}</p>
+                    <p className="whitespace-pre-wrap text-sm">{msg.text}</p>
                     <div className={`flex items-center justify-end gap-1 mt-1 text-xs ${
                       msg.from === 'cliente' ? 'text-gray-500' : 'text-white/70'
                     }`}>
-                      <Clock size={12} />
+                      <Clock size={10} />
                       {formatTime(msg.timestamp)}
-                      {msg.from !== 'cliente' && (
-                        <CheckCheck size={14} className="ml-1" />
-                      )}
+                      {msg.from !== 'cliente' && <CheckCheck size={12} className="ml-1" />}
                     </div>
                   </div>
                 </div>
@@ -508,24 +718,21 @@ function App() {
               <div ref={messagesEndRef} />
             </div>
             
-            {/* Input */}
-            <div className="p-4 border-t border-gray-700 bg-gray-800">
-              <div className="flex items-center gap-3">
+            <div className="p-3 lg:p-4 border-t border-gray-700 bg-gray-800 safe-area-bottom">
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                   placeholder="Digite uma mensagem..."
-                  data-testid="message-input"
-                  className="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                  className="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-red-500 text-sm"
                 />
                 <button
                   onClick={sendMessage}
-                  data-testid="send-message-btn"
-                  className="p-3 bg-red-500 hover:bg-red-600 rounded-xl transition-colors"
+                  className="p-2.5 bg-red-500 hover:bg-red-600 rounded-xl"
                 >
-                  <Send size={20} className="text-white" />
+                  <Send size={18} className="text-white" />
                 </button>
               </div>
             </div>
@@ -533,9 +740,8 @@ function App() {
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center text-gray-500">
-              <MessageCircle size={64} className="mx-auto mb-4 opacity-50" />
-              <p className="text-lg">Selecione uma conversa</p>
-              <p className="text-sm mt-2">Escolha uma conversa da lista para visualizar</p>
+              <MessageCircle size={48} className="mx-auto mb-4 opacity-50" />
+              <p>Selecione uma conversa</p>
             </div>
           </div>
         )}
@@ -545,72 +751,59 @@ function App() {
 
   // Configurações View
   const ConfiguracoesView = () => (
-    <div className="p-8 max-w-2xl">
-      <h2 className="text-2xl font-bold mb-6 text-white">Configurações</h2>
+    <div className="p-4 lg:p-8 max-w-2xl">
+      <h2 className="text-xl lg:text-2xl font-bold mb-6 text-white">Configurações</h2>
       
-      <div className="space-y-6">
-        {/* Auto Reply */}
-        <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+      <div className="space-y-4">
+        <div className="bg-gray-800 rounded-2xl p-4 lg:p-6 border border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-bold text-white">Resposta Automática</h3>
-              <p className="text-sm text-gray-400 mt-1">
-                Quando ativado, o bot responde automaticamente às mensagens
-              </p>
+              <h3 className="font-bold text-white text-sm lg:text-base">Resposta Automática</h3>
+              <p className="text-xs lg:text-sm text-gray-400 mt-1">Bot responde automaticamente</p>
             </div>
-            <button
-              onClick={toggleAutoReply}
-              data-testid="toggle-auto-reply"
-              className="p-2"
-            >
-              {status.bot_config.auto_reply ? (
-                <ToggleRight size={40} className="text-red-500" />
-              ) : (
-                <ToggleLeft size={40} className="text-gray-500" />
-              )}
+            <button onClick={toggleAutoReply}>
+              {status.bot_config.auto_reply 
+                ? <ToggleRight size={36} className="text-red-500" />
+                : <ToggleLeft size={36} className="text-gray-500" />
+              }
             </button>
           </div>
         </div>
         
-        {/* Timeout Humano */}
-        <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
-          <h3 className="font-bold mb-2 text-white">Timeout de Takeover Humano</h3>
-          <p className="text-sm text-gray-400 mb-4">
-            Após este tempo sem resposta humana, o bot retoma a conversa
-          </p>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={status.bot_config.human_takeover_minutes}
-              disabled
-              className="w-24 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white"
-            />
-            <span className="text-gray-400">minutos</span>
+        <div className="bg-gray-800 rounded-2xl p-4 lg:p-6 border border-gray-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-white text-sm lg:text-base">Notificações Push</h3>
+              <p className="text-xs lg:text-sm text-gray-400 mt-1">Receba alertas de novas mensagens</p>
+            </div>
+            <button onClick={notificationsEnabled ? () => {} : requestNotifications}>
+              {notificationsEnabled 
+                ? <Bell size={24} className="text-green-400" />
+                : <BellOff size={24} className="text-gray-500" />
+              }
+            </button>
           </div>
         </div>
         
-        {/* Gemini Test */}
-        <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
-          <h3 className="font-bold mb-2 text-white">Integração Gemini</h3>
-          <p className="text-sm text-gray-400 mb-4">
-            Status: {status.gemini_configured ? '✅ Configurado' : '❌ Não configurado'}
+        <div className="bg-gray-800 rounded-2xl p-4 lg:p-6 border border-gray-700">
+          <h3 className="font-bold mb-2 text-white text-sm lg:text-base">Integração Gemini</h3>
+          <p className="text-xs lg:text-sm text-gray-400 mb-4">
+            {status.gemini_configured ? '✅ Configurado' : '❌ Não configurado'}
           </p>
           <button
             onClick={testGemini}
-            data-testid="test-gemini-btn"
-            className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg text-sm font-medium transition-colors text-white"
+            className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg text-sm font-medium text-white"
           >
             Testar Conexão
           </button>
         </div>
         
-        {/* Info */}
-        <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
-          <h3 className="font-bold mb-4 text-white">Informações do Bot</h3>
-          <div className="space-y-3 text-sm">
+        <div className="bg-gray-800 rounded-2xl p-4 lg:p-6 border border-gray-700">
+          <h3 className="font-bold mb-4 text-white text-sm lg:text-base">Sobre</h3>
+          <div className="space-y-2 text-xs lg:text-sm">
             <div className="flex justify-between">
               <span className="text-gray-400">Versão</span>
-              <span className="text-white">1.0.0</span>
+              <span className="text-white">1.0.0 (PWA)</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Persona</span>
@@ -618,14 +811,13 @@ function App() {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Site</span>
-              <a 
-                href="https://sushiakicb.shop" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-red-400 hover:underline"
-              >
+              <a href="https://sushiakicb.shop" target="_blank" rel="noopener noreferrer" className="text-red-400">
                 sushiakicb.shop
               </a>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Instalado</span>
+              <span className="text-white">{isInstalled ? '✅ Sim' : '❌ Não'}</span>
             </div>
           </div>
         </div>
@@ -637,7 +829,8 @@ function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900">
         <div className="text-center">
-          <RefreshCw size={48} className="mx-auto mb-4 animate-spin text-red-500" />
+          <div className="text-5xl mb-4 animate-bounce">🍣</div>
+          <RefreshCw size={32} className="mx-auto mb-4 animate-spin text-red-500" />
           <p className="text-gray-400">Carregando...</p>
         </div>
       </div>
@@ -645,14 +838,18 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-900" data-testid="sushiaki-bot-app">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-gray-900" data-testid="sushiaki-bot-app">
+      <MobileHeader />
+      <MobileMenu />
       <Sidebar />
       
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-hidden pt-16 lg:pt-0" style={{ paddingBottom: showInstallBanner ? '80px' : '0' }}>
         {activeTab === 'dashboard' && <DashboardView />}
         {activeTab === 'conversas' && <ConversasView />}
         {activeTab === 'configuracoes' && <ConfiguracoesView />}
       </main>
+      
+      <InstallBanner />
     </div>
   );
 }
