@@ -187,7 +187,6 @@ function App() {
         setWhatsappBotStatus(data);
       }
     } catch (err) {
-      // Bot pode não estar acessível em produção
       console.log('Bot WhatsApp não acessível diretamente');
     }
   }, []);
@@ -202,6 +201,19 @@ function App() {
       }
     } catch (err) {
       console.error('Erro config:', err);
+    }
+  }, []);
+
+  // Buscar modelos disponíveis
+  const fetchModels = useCallback(async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/models`);
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableModels(data.models || {});
+      }
+    } catch (err) {
+      console.error('Erro models:', err);
     }
   }, []);
 
