@@ -20,7 +20,21 @@ import {
   ExternalLink
 } from 'lucide-react';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+// Determinar URL do backend baseado no ambiente
+const getBackendUrl = () => {
+  // Se estiver rodando em localhost, usar localhost
+  if (window.location.hostname === 'localhost') {
+    return 'http://localhost:8001';
+  }
+  // Caso contrário, usar URL do .env ou construir baseado no hostname
+  const envUrl = process.env.REACT_APP_BACKEND_URL;
+  if (envUrl) return envUrl;
+  
+  // Fallback: usar mesmo hostname com porta 8001 ou /api
+  return window.location.origin;
+};
+
+const BACKEND_URL = getBackendUrl();
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
