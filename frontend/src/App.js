@@ -622,18 +622,21 @@ function App() {
       </div>
       
       {/* QR Code Section */}
-      {!status.whatsapp.connected ? (
+      {!isWhatsAppConnected ? (
         <div className="bg-gray-800 rounded-2xl p-6 lg:p-8 border border-gray-700">
           <div className="text-center">
             <h3 className="text-lg lg:text-xl font-bold mb-4 text-white">Conectar WhatsApp</h3>
-            <p className="text-gray-400 mb-6 text-sm">
+            <p className="text-gray-400 mb-2 text-sm">
               Escaneie o QR Code com seu WhatsApp
             </p>
+            <p className="text-gray-500 mb-6 text-xs">
+              Status: {whatsappStatusText}
+            </p>
             
-            {status.whatsapp.qr_code ? (
+            {currentQRCode ? (
               <div className="inline-block bg-white p-3 lg:p-4 rounded-2xl">
                 <img 
-                  src={status.whatsapp.qr_code} 
+                  src={currentQRCode} 
                   alt="QR Code" 
                   className="w-48 h-48 lg:w-64 lg:h-64"
                   data-testid="qr-code-image"
@@ -668,8 +671,8 @@ function App() {
             </div>
             <h3 className="text-lg lg:text-xl font-bold text-green-400 mb-2">WhatsApp Conectado!</h3>
             <p className="text-gray-400 text-sm">O bot está respondendo automaticamente</p>
-            {status.whatsapp.phone_number && (
-              <p className="text-gray-500 mt-2 text-sm">Número: {status.whatsapp.phone_number}</p>
+            {(status.whatsapp.phone_number || whatsappBotStatus.phone_number) && (
+              <p className="text-gray-500 mt-2 text-sm">Número: {status.whatsapp.phone_number || whatsappBotStatus.phone_number}</p>
             )}
           </div>
         </div>
