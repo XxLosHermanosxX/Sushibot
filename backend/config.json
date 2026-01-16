@@ -1,0 +1,8 @@
+{
+  "gemini_api_key": "AIzaSyCjfbiyv5kK0N57pRfiCmn9sfCUVx-2Qd0",
+  "gemini_model": "gemini-2.5-flash",
+  "auto_reply": true,
+  "human_takeover_minutes": 60,
+  "site_url": "https://sushiakicb.shop",
+  "business_name": "Sushi Aki"
+}
