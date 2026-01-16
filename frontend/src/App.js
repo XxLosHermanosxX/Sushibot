@@ -301,10 +301,18 @@ function App() {
     }
   };
 
-  // Salvar API Key
-  const saveApiKey = () => {
-    if (newApiKey.trim()) {
-      saveConfig({ gemini_api_key: newApiKey.trim() });
+  // Salvar API Keys
+  const saveGeminiKey = () => {
+    if (newGeminiKey.trim()) {
+      saveConfig({ gemini_api_key: newGeminiKey.trim() });
+      setNewGeminiKey('');
+    }
+  };
+
+  const saveOpenRouterKey = () => {
+    if (newOpenRouterKey.trim()) {
+      saveConfig({ openrouter_api_key: newOpenRouterKey.trim() });
+      setNewOpenRouterKey('');
     }
   };
 
@@ -313,17 +321,20 @@ function App() {
     saveConfig({ auto_reply: !appConfig.auto_reply });
   };
 
-  // Testar Gemini
-  const testGemini = async () => {
-    setTestingGemini(true);
+  // Testar IA
+  const testAI = async () => {
+    setTestingAI(true);
     setConfigMessage(null);
     
     try {
-      const response = await fetch(`${BACKEND_URL}/api/test-gemini`, { method: 'POST' });
+      const response = await fetch(`${BACKEND_URL}/api/test-ai`, { method: 'POST' });
       const data = await response.json();
       
       if (data.success) {
-        setConfigMessage({ type: 'success', text: `✅ Gemini funcionando: "${data.response}"` });
+        setConfigMessage({ 
+          type: 'success', 
+          text: `✅ ${data.provider.toUpperCase()} funcionando! Modelo: ${data.model}` 
+        });
       } else {
         setConfigMessage({ type: 'error', text: `❌ Erro: ${data.error}` });
       }
