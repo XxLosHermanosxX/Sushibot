@@ -353,7 +353,7 @@ async def update_whatsapp_status(status: dict):
 async def test_gemini():
     """Testa conexão com Gemini"""
     try:
-        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         response = model.generate_content("Diga apenas: OK")
         return {"success": True, "response": response.text}
     except Exception as e:
