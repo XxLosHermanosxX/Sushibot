@@ -256,6 +256,7 @@ function App() {
   useEffect(() => {
     fetchStatus();
     fetchConfig();
+    fetchModels();
     fetchConversas();
     fetchWhatsAppBotStatus();
     
@@ -266,7 +267,7 @@ function App() {
     }, 2000);
     
     return () => clearInterval(interval);
-  }, [fetchStatus, fetchConfig, fetchConversas, fetchWhatsAppBotStatus]);
+  }, [fetchStatus, fetchConfig, fetchModels, fetchConversas, fetchWhatsAppBotStatus]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
