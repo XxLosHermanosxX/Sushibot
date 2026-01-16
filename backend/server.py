@@ -1,17 +1,23 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import os
 import json
 import asyncio
-import subprocess
-import signal
 from datetime import datetime
-from dotenv import load_dotenv
-import google.generativeai as genai
+from pathlib import Path
 
-load_dotenv()
+# Carregar .env manualmente para evitar problemas
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ[key.strip()] = value.strip()
 
 app = FastAPI(title="Sushi Aki Bot API")
 
@@ -24,16 +30,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==================== CONFIGURAÇÃO GEMINI ====================
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-genai.configure(api_key=GEMINI_API_KEY)
+# ==================== CONFIGURAÇÃO ====================
+CONFIG_FILE = Path(__file__).parent / "config.json"
+
+def load_config():
+    """Carrega configuração do arquivo"""
+    default_config = {
+        "gemini_api_key": os.getenv("GEMINI_API_KEY", ""),
+        "gemini_model": "gemini-2.5-flash",
+        "auto_reply": True,
+        "human_takeover_minutes": 60,
+        "site_url": "https://sushiakicb.shop",
+        "business_name": "Sushi Aki"
+    }
+    
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE) as f:
+                saved = json.load(f)
+                default_config.update(saved)
+        except:
+            pass
+    
+    return default_config
+
+def save_config(config):
+    """Salva configuração no arquivo"""
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar config: {e}")
+        return False
+
+# Carregar configuração inicial
+config = load_config()
+
+# ==================== GEMINI ====================
+def get_gemini_client():
+    """Retorna cliente Gemini configurado"""
+    try:
+        import google.generativeai as genai
+        api_key = config.get("gemini_api_key", "")
+        if not api_key:
+            return None
+        genai.configure(api_key=api_key)
+        return genai
+    except Exception as e:
+        print(f"Erro ao configurar Gemini: {e}")
+        return None
 
 # Prompt do sistema SORA
-SYSTEM_PROMPT = """Você é SORA 🍣, atendente virtual do Sushi Aki.
+def get_system_prompt():
+    return f"""Você é SORA 🍣, atendente virtual do {config.get('business_name', 'Sushi Aki')}.
 
 Missão:
 Induzir o cliente a finalizar o pedido exclusivamente pelo site:
-https://sushiakicb.shop
+{config.get('site_url', 'https://sushiakicb.shop')}
 
 Regras fixas:
 - Nunca aceite pedidos fora do site
@@ -55,21 +109,21 @@ Estilo:
 - Emojis com moderação (máximo 2 por mensagem)
 - Seja simpático mas profissional
 
-IMPORTANTE: Sempre direcione para o site https://sushiakicb.shop para qualquer pedido ou dúvida sobre cardápio."""
+IMPORTANTE: Sempre direcione para o site {config.get('site_url', 'https://sushiakicb.shop')} para qualquer pedido ou dúvida sobre cardápio."""
 
-MENSAGEM_INICIAL = """Oi! 😊 Seja bem-vindo ao Sushi Aki 🍣
+MENSAGEM_INICIAL = f"""Oi! 😊 Seja bem-vindo ao {config.get('business_name', 'Sushi Aki')} 🍣
 
 👉 Nosso cardápio completo e os pedidos são feitos pelo site:
-https://sushiakicb.shop
+{config.get('site_url', 'https://sushiakicb.shop')}
 
 Aceitamos Pix e cartão 💳
 Entregamos em toda Curitiba e região, com 4 unidades físicas.
 
 Se quiser, posso te ajudar a escolher 😉"""
 
-RESPOSTA_DESCONFIANCA = """Entendo a preocupação 😊
+RESPOSTA_DESCONFIANCA = f"""Entendo a preocupação 😊
 Trabalhamos com 4 unidades físicas em Curitiba, e todos os pedidos são registrados pelo site oficial:
-👉 https://sushiakicb.shop
+👉 {config.get('site_url', 'https://sushiakicb.shop')}
 
 O pagamento é por Pix ou cartão, com confirmação imediata 🍣"""
 
@@ -83,11 +137,6 @@ whatsapp_status = {
     "qr_code": None,
     "phone_number": None,
     "status_text": "Desconectado"
-}
-bot_process = None
-bot_config = {
-    "auto_reply": True,
-    "human_takeover_minutes": 60
 }
 
 # ==================== FUNÇÕES AUXILIARES ====================
@@ -113,9 +162,16 @@ def get_conversa(chat_id: str) -> Dict:
 
 async def broadcast_message(message: dict):
     """Envia mensagem para todos os clientes WebSocket conectados"""
+    disconnected = []
     for client in websocket_clients:
         try:
             await client.send_json(message)
+        except:
+            disconnected.append(client)
+    
+    for client in disconnected:
+        try:
+            websocket_clients.remove(client)
         except:
             pass
 
@@ -129,10 +185,14 @@ async def gerar_resposta_gemini(chat_id: str, mensagem: str) -> str:
             conversa["objecoes_tratadas"].append("desconfianca")
             return RESPOSTA_DESCONFIANCA
     
+    genai = get_gemini_client()
+    if not genai:
+        return f"Por favor, acesse nosso site para fazer seu pedido: {config.get('site_url', 'https://sushiakicb.shop')} 🍣"
+    
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            system_instruction=SYSTEM_PROMPT
+            model_name=config.get("gemini_model", "gemini-2.5-flash"),
+            system_instruction=get_system_prompt()
         )
         
         # Construir histórico
@@ -155,7 +215,7 @@ async def gerar_resposta_gemini(chat_id: str, mensagem: str) -> str:
         
     except Exception as e:
         print(f"Erro na API Gemini: {e}")
-        return "Desculpe, tive um problema técnico. Por favor, acesse nosso site: https://sushiakicb.shop 🍣"
+        return f"Desculpe, tive um problema técnico. Por favor, acesse nosso site: {config.get('site_url', 'https://sushiakicb.shop')} 🍣"
 
 # ==================== MODELS ====================
 
@@ -163,9 +223,13 @@ class MessageRequest(BaseModel):
     chat_id: str
     message: str
 
-class BotConfigRequest(BaseModel):
+class ConfigRequest(BaseModel):
+    gemini_api_key: Optional[str] = None
+    gemini_model: Optional[str] = None
     auto_reply: Optional[bool] = None
     human_takeover_minutes: Optional[int] = None
+    site_url: Optional[str] = None
+    business_name: Optional[str] = None
 
 class ManualMessageRequest(BaseModel):
     chat_id: str
@@ -181,10 +245,63 @@ async def health_check():
 async def get_status():
     return {
         "whatsapp": whatsapp_status,
-        "bot_config": bot_config,
+        "bot_config": {
+            "auto_reply": config.get("auto_reply", True),
+            "human_takeover_minutes": config.get("human_takeover_minutes", 60)
+        },
         "conversas_ativas": len(conversas),
-        "gemini_configured": bool(GEMINI_API_KEY)
+        "gemini_configured": bool(config.get("gemini_api_key"))
     }
+
+@app.get("/api/config")
+async def get_config():
+    """Retorna configuração atual (sem expor a API key completa)"""
+    return {
+        "gemini_api_key_set": bool(config.get("gemini_api_key")),
+        "gemini_api_key_preview": config.get("gemini_api_key", "")[:10] + "..." if config.get("gemini_api_key") else "",
+        "gemini_model": config.get("gemini_model", "gemini-2.5-flash"),
+        "auto_reply": config.get("auto_reply", True),
+        "human_takeover_minutes": config.get("human_takeover_minutes", 60),
+        "site_url": config.get("site_url", "https://sushiakicb.shop"),
+        "business_name": config.get("business_name", "Sushi Aki")
+    }
+
+@app.post("/api/config")
+async def update_config(request: ConfigRequest):
+    """Atualiza configuração"""
+    global config
+    
+    updated = False
+    
+    if request.gemini_api_key is not None:
+        config["gemini_api_key"] = request.gemini_api_key
+        updated = True
+    
+    if request.gemini_model is not None:
+        config["gemini_model"] = request.gemini_model
+        updated = True
+    
+    if request.auto_reply is not None:
+        config["auto_reply"] = request.auto_reply
+        updated = True
+    
+    if request.human_takeover_minutes is not None:
+        config["human_takeover_minutes"] = request.human_takeover_minutes
+        updated = True
+    
+    if request.site_url is not None:
+        config["site_url"] = request.site_url
+        updated = True
+    
+    if request.business_name is not None:
+        config["business_name"] = request.business_name
+        updated = True
+    
+    if updated:
+        save_config(config)
+        await broadcast_message({"type": "config_updated", "config": await get_config()})
+    
+    return {"success": True, "config": await get_config()}
 
 @app.get("/api/conversas")
 async def get_conversas():
@@ -199,17 +316,6 @@ async def get_conversa_by_id(chat_id: str):
     if chat_id not in conversas:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
     return conversas[chat_id]
-
-@app.post("/api/config")
-async def update_config(config: BotConfigRequest):
-    """Atualiza configurações do bot"""
-    if config.auto_reply is not None:
-        bot_config["auto_reply"] = config.auto_reply
-    if config.human_takeover_minutes is not None:
-        bot_config["human_takeover_minutes"] = config.human_takeover_minutes
-    
-    await broadcast_message({"type": "config_updated", "config": bot_config})
-    return bot_config
 
 @app.post("/api/takeover/{chat_id}")
 async def human_takeover(chat_id: str):
@@ -261,8 +367,6 @@ async def send_manual_message(request: ManualMessageRequest):
         "message": msg
     })
     
-    # TODO: Enviar via WhatsApp quando bot Node.js estiver conectado
-    
     return {"success": True, "message": msg}
 
 @app.post("/api/webhook/message")
@@ -295,12 +399,12 @@ async def receive_message(request: MessageRequest):
         if conversa["ultimo_humano"]:
             ultimo = datetime.fromisoformat(conversa["ultimo_humano"])
             diff_minutes = (datetime.now() - ultimo).total_seconds() / 60
-            if diff_minutes > bot_config["human_takeover_minutes"]:
+            if diff_minutes > config.get("human_takeover_minutes", 60):
                 conversa["humano_ativo"] = False
             else:
                 return {"response": None, "reason": "human_active"}
     
-    if not bot_config["auto_reply"]:
+    if not config.get("auto_reply", True):
         return {"response": None, "reason": "auto_reply_disabled"}
     
     # Gerar resposta
@@ -329,9 +433,14 @@ async def receive_message(request: MessageRequest):
     return {"response": resposta}
 
 @app.post("/api/webhook/status")
-async def update_whatsapp_status(status: dict):
+async def update_whatsapp_status(request: Request):
     """Webhook para atualizar status do WhatsApp"""
     global whatsapp_status
+    
+    try:
+        status = await request.json()
+    except:
+        return {"success": False, "error": "Invalid JSON"}
     
     if "connected" in status:
         whatsapp_status["connected"] = status["connected"]
@@ -352,12 +461,32 @@ async def update_whatsapp_status(status: dict):
 @app.post("/api/test-gemini")
 async def test_gemini():
     """Testa conexão com Gemini"""
+    genai = get_gemini_client()
+    
+    if not genai:
+        return {"success": False, "error": "API Key do Gemini não configurada"}
+    
     try:
-        model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+        model = genai.GenerativeModel(model_name=config.get("gemini_model", "gemini-2.5-flash"))
         response = model.generate_content("Diga apenas: OK")
-        return {"success": True, "response": response.text}
+        return {"success": True, "response": response.text.strip()}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+@app.delete("/api/conversas")
+async def clear_conversas():
+    """Limpa todas as conversas"""
+    global conversas
+    conversas = {}
+    return {"success": True, "message": "Conversas limpas"}
+
+@app.delete("/api/conversa/{chat_id}")
+async def delete_conversa(chat_id: str):
+    """Remove uma conversa específica"""
+    if chat_id in conversas:
+        del conversas[chat_id]
+        return {"success": True}
+    raise HTTPException(status_code=404, detail="Conversa não encontrada")
 
 # ==================== WEBSOCKET ====================
 
@@ -367,17 +496,22 @@ async def websocket_endpoint(websocket: WebSocket):
     websocket_clients.append(websocket)
     
     # Enviar estado inicial
-    await websocket.send_json({
-        "type": "init",
-        "status": whatsapp_status,
-        "config": bot_config,
-        "conversas": list(conversas.values())
-    })
+    try:
+        await websocket.send_json({
+            "type": "init",
+            "status": whatsapp_status,
+            "config": {
+                "auto_reply": config.get("auto_reply", True),
+                "human_takeover_minutes": config.get("human_takeover_minutes", 60)
+            },
+            "conversas": list(conversas.values())
+        })
+    except:
+        pass
     
     try:
         while True:
             data = await websocket.receive_text()
-            # Processar comandos do frontend se necessário
             try:
                 cmd = json.loads(data)
                 if cmd.get("type") == "ping":
@@ -385,7 +519,23 @@ async def websocket_endpoint(websocket: WebSocket):
             except:
                 pass
     except WebSocketDisconnect:
-        websocket_clients.remove(websocket)
+        pass
+    finally:
+        try:
+            websocket_clients.remove(websocket)
+        except:
+            pass
+
+# ==================== STARTUP ====================
+
+@app.on_event("startup")
+async def startup_event():
+    print("=" * 50)
+    print("🍣 Sushi Aki Bot - Backend iniciado")
+    print(f"📝 Config file: {CONFIG_FILE}")
+    print(f"🤖 Gemini configurado: {'Sim' if config.get('gemini_api_key') else 'Não'}")
+    print(f"🌐 Site: {config.get('site_url', 'https://sushiakicb.shop')}")
+    print("=" * 50)
 
 if __name__ == "__main__":
     import uvicorn
