@@ -66,6 +66,11 @@ function App() {
     conversas_ativas: 0,
     gemini_configured: false
   });
+  const [whatsappBotStatus, setWhatsappBotStatus] = useState({
+    connected: false,
+    qr: null,
+    status: 'Carregando...'
+  });
   const [appConfig, setAppConfig] = useState({
     gemini_api_key_set: false,
     gemini_api_key_preview: '',
