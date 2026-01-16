@@ -1,0 +1,23 @@
+{
+  "name": "sushi-aki-bot",
+  "version": "2.5.0",
+  "description": "Bot WhatsApp com IA para atendimento automatizado do Sushi Aki",
+  "main": "sushi_bot.js",
+  "scripts": {
+    "start": "node sushi_bot.js",
+    "install-deps": "npm install"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.16",
+    "@google/generative-ai": "^0.21.0",
+    "openai": "^4.77.3",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "pino": "^9.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Sushi Aki",
+  "license": "MIT"
+}
