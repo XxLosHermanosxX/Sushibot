@@ -525,7 +525,7 @@ function App() {
       </nav>
       
       <div className="p-4 border-t border-gray-700">
-        <StatusBadge connected={status.whatsapp.connected} />
+        <StatusBadge connected={status.whatsapp.connected || whatsappBotStatus.connected} />
         {!status.gemini_configured && (
           <div className="mt-3 p-2 bg-yellow-500/20 rounded-lg">
             <p className="text-yellow-400 text-xs flex items-center gap-1">
@@ -537,6 +537,11 @@ function App() {
       </div>
     </div>
   );
+
+  // Determinar status real do WhatsApp (combinar backend + bot direto)
+  const isWhatsAppConnected = status.whatsapp.connected || whatsappBotStatus.connected;
+  const currentQRCode = status.whatsapp.qr_code || whatsappBotStatus.qr;
+  const whatsappStatusText = whatsappBotStatus.connected ? 'Conectado!' : (whatsappBotStatus.status || status.whatsapp.status_text);
 
   // Dashboard View
   const DashboardView = () => (
@@ -576,13 +581,13 @@ function App() {
             <div>
               <p className="text-gray-400 text-xs lg:text-sm">Status</p>
               <p className="text-lg lg:text-xl font-bold mt-1 text-white">
-                {status.whatsapp.connected ? 'Online' : 'Offline'}
+                {isWhatsAppConnected ? 'Online' : 'Offline'}
               </p>
             </div>
             <div className={`w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center ${
-              status.whatsapp.connected ? 'bg-green-500/20' : 'bg-yellow-500/20'
+              isWhatsAppConnected ? 'bg-green-500/20' : 'bg-yellow-500/20'
             }`}>
-              <Phone size={20} className={status.whatsapp.connected ? 'text-green-400' : 'text-yellow-400'} />
+              <Phone size={20} className={isWhatsAppConnected ? 'text-green-400' : 'text-yellow-400'} />
             </div>
           </div>
         </div>
