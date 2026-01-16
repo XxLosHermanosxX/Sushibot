@@ -76,12 +76,15 @@ function App() {
   const [appConfig, setAppConfig] = useState({
     gemini_api_key_set: false,
     gemini_api_key_preview: '',
-    gemini_model: 'gemini-2.5-flash',
+    openrouter_api_key_set: false,
+    openrouter_api_key_preview: '',
+    selected_model: 'deepseek/deepseek-r1:free',
     auto_reply: true,
     human_takeover_minutes: 60,
     site_url: 'https://sushiakicb.shop',
     business_name: 'Sushi Aki'
   });
+  const [availableModels, setAvailableModels] = useState({ openrouter: {}, gemini: {} });
   const [conversas, setConversas] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
   const [newMessage, setNewMessage] = useState('');
@@ -94,11 +97,12 @@ function App() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   
   // Estados para configuração
-  const [newApiKey, setNewApiKey] = useState('');
+  const [newGeminiKey, setNewGeminiKey] = useState('');
+  const [newOpenRouterKey, setNewOpenRouterKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [configMessage, setConfigMessage] = useState(null);
-  const [testingGemini, setTestingGemini] = useState(false);
+  const [testingAI, setTestingAI] = useState(false);
   
   const messagesEndRef = useRef(null);
 
