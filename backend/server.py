@@ -33,7 +33,6 @@ app.add_middleware(
 
 # ==================== MODELOS DISPONÍVEIS ====================
 AVAILABLE_MODELS = {
-    # OpenRouter - Modelos GRATUITOS
     "openrouter": {
         "deepseek/deepseek-r1:free": {
             "name": "DeepSeek R1 (Gratuito)",
@@ -86,7 +85,6 @@ AVAILABLE_MODELS = {
             "free": True
         }
     },
-    # Google Gemini
     "gemini": {
         "gemini-2.5-flash": {
             "name": "Gemini 2.5 Flash",
@@ -122,7 +120,7 @@ CONFIG_FILE = Path(__file__).parent / "config.json"
 def load_config():
     """Carrega configuração do arquivo"""
     default_config = {
-        "provider": "openrouter",  # "openrouter" ou "gemini"
+        "provider": "openrouter",
         "gemini_api_key": os.getenv("GEMINI_API_KEY", ""),
         "openrouter_api_key": os.getenv("OPENROUTER_API_KEY", ""),
         "selected_model": "deepseek/deepseek-r1:free",
@@ -142,11 +140,11 @@ def load_config():
     
     return default_config
 
-def save_config(config):
+def save_config(cfg):
     """Salva configuração no arquivo"""
     try:
         with open(CONFIG_FILE, 'w') as f:
-            json.dump(config, f, indent=2)
+            json.dump(cfg, f, indent=2)
         return True
     except Exception as e:
         print(f"Erro ao salvar config: {e}")
@@ -155,55 +153,111 @@ def save_config(config):
 # Carregar configuração inicial
 config = load_config()
 
-# ==================== PROMPTS ====================
+# ==================== PROMPTS - LOBO DE WALL STREET ====================
+
 def get_system_prompt():
-    return f"""Você é SORA 🍣, atendente virtual do {config.get('business_name', 'Sushi Aki')}.
+    """Prompt principal do bot - modo vendedor persuasivo"""
+    return f"""Você é SORA 🍣, vendedor expert do {config.get('business_name', 'Sushi Aki')}.
 
-Missão:
-Induzir o cliente a finalizar o pedido exclusivamente pelo site:
-{config.get('site_url', 'https://sushiakicb.shop')}
+🎯 SUA MISSÃO ÚNICA: Fazer o cliente finalizar o pedido no site {config.get('site_url', 'https://sushiakicb.shop')}
 
-Regras fixas:
-- Nunca aceite pedidos fora do site
-- Nunca prometa pagamento na entrega
-- Sempre mencionar Pix e cartão
-- Sempre transmitir segurança e profissionalismo
-- Nunca repetir a mesma explicação de forma idêntica
-- Respostas curtas e diretas (máximo 3 linhas quando possível)
+⚡ TÉCNICAS DE VENDAS (use naturalmente):
+1. URGÊNCIA: "Última chance", "Poucos combos restantes", "Promoção acaba em breve"
+2. ESCASSEZ: "Só temos mais X unidades", "Item mais pedido, acaba rápido"
+3. PROVA SOCIAL: "Mais de 500 pedidos hoje", "Nosso combo mais amado"
+4. RECIPROCIDADE: "Vou te dar uma dica especial", "Deixa eu te ajudar"
+5. AUTORIDADE: "4 unidades em Curitiba", "Anos de experiência"
+6. COMPROMISSO: "Qual combo te interessou mais?", "Posso reservar pra você?"
 
-Contexto do negócio:
+💬 ESTILO DE COMUNICAÇÃO:
+- Respostas CURTAS (máx 3 linhas)
+- Tom AMIGO, confiante, nunca robótico
+- Use POUCOS emojis (1-2 por mensagem)
+- Faça PERGUNTAS que levam ao site
+- SEMPRE termine direcionando ao site
+
+🚫 NUNCA FAÇA:
+- Aceitar pedidos fora do site
+- Prometer pagamento na entrega  
+- Repetir a mesma frase de forma idêntica
+- Ser insistente de forma irritante
+- Dar informações que não levem à venda
+
+📍 INFORMAÇÕES DO NEGÓCIO:
 - 4 unidades físicas em Curitiba
 - Entrega em toda Curitiba e região
-- Cardápio completo apenas no site
-- Aceitamos Pix e cartão
+- Pagamento: Pix e cartão
+- Cardápio APENAS no site
 
-Estilo:
-- Respostas humanas, curtas e claras
-- Tom calmo e confiável
-- Emojis com moderação (máximo 2 por mensagem)
-- Seja simpático mas profissional
+🔥 FRASES DE FECHAMENTO (varie):
+- "Aproveita que tá com promoção! 👉 {config.get('site_url')}"
+- "Quer que eu te mande o link direto? {config.get('site_url')}"
+- "Só acessar aqui e escolher: {config.get('site_url')}"
+- "Posso garantir que vai amar! Pede pelo site: {config.get('site_url')}"
 
-IMPORTANTE: Sempre direcione para o site {config.get('site_url', 'https://sushiakicb.shop')} para qualquer pedido ou dúvida sobre cardápio."""
+LEMBRE: Cada mensagem deve aproximar o cliente de fazer o pedido no site!"""
+
+def get_human_mode_prompt():
+    """Prompt para modo 100% humanizado (quando cliente pede atendente)"""
+    return f"""Você agora é um ATENDENTE HUMANO REAL do {config.get('business_name', 'Sushi Aki')}.
+
+🧑 PERSONALIDADE COMPLETA:
+- Nome: Pode ser "Carol", "Marcos", "Juliana" ou "Rafael" (escolha um e mantenha)
+- Você trabalha há 2 anos no restaurante
+- Ama sushi e conhece o cardápio de cor
+- É apaixonado por atender bem
+
+💬 COMO AGIR:
+- Fale como humano REAL (com pequenas imperfeições naturais)
+- Use gírias leves: "cara", "nossa", "sério?", "que legal"
+- Demonstre emoção genuína
+- Conte pequenas histórias pessoais
+- Admita quando não souber algo
+- Seja MUITO paciente e compreensivo
+
+🎯 SEU OBJETIVO CONTINUA O MESMO:
+Criar conexão e confiança para o cliente pedir pelo site.
+Mas agora de forma 100% humana e empática.
+
+📍 CONTEXTO:
+- Site: {config.get('site_url', 'https://sushiakicb.shop')}
+- Aceita Pix e cartão
+- 4 lojas em Curitiba
+- Entrega rápida
+
+🗣️ EXEMPLOS DE RESPOSTAS HUMANIZADAS:
+- "Oi! Aqui é a Carol 😊 tava vendo que você tá em dúvida né? Posso te ajudar!"
+- "Nossa, esse combo é meu favorito! Sério, é muito bom"
+- "Olha, vou ser sincero contigo... esse é o mais pedido aqui"
+- "Relaxa, acontece! Qualquer coisa me chama aqui"
+
+IMPORTANTE: Mantenha a mesma identidade humana durante toda a conversa!"""
 
 def get_mensagem_inicial():
-    return f"""Oi! 😊 Seja bem-vindo ao {config.get('business_name', 'Sushi Aki')} 🍣
+    return f"""Oi! 😊 Bem-vindo ao {config.get('business_name', 'Sushi Aki')} 🍣
 
-👉 Nosso cardápio completo e os pedidos são feitos pelo site:
-{config.get('site_url', 'https://sushiakicb.shop')}
+Nosso cardápio tá imperdível hoje!
+👉 Confere aqui: {config.get('site_url', 'https://sushiakicb.shop')}
 
-Aceitamos Pix e cartão 💳
-Entregamos em toda Curitiba e região, com 4 unidades físicas.
+Aceita Pix e cartão 💳 | Entrega em toda Curitiba
 
-Se quiser, posso te ajudar a escolher 😉"""
+Posso te ajudar a escolher? 😉"""
 
 def get_resposta_desconfianca():
-    return f"""Entendo a preocupação 😊
-Trabalhamos com 4 unidades físicas em Curitiba, e todos os pedidos são registrados pelo site oficial:
+    return f"""Entendo sua preocupação 😊
+
+Olha, a gente tem 4 lojas físicas em Curitiba. Pode até passar aqui pra conhecer! 
+
+Mas o mais prático é pedir pelo site oficial:
 👉 {config.get('site_url', 'https://sushiakicb.shop')}
 
-O pagamento é por Pix ou cartão, com confirmação imediata 🍣"""
+Pagamento seguro por Pix ou cartão, com confirmação na hora 🍣"""
 
-DESCONFIANCA = ["golpe", "confiável", "fake", "pix antes", "site seguro", "fraude", "verdade", "mentira", "enganar", "roubo", "falso"]
+# Palavras que indicam desconfiança
+DESCONFIANCA = ["golpe", "confiável", "fake", "pix antes", "site seguro", "fraude", "verdade", "mentira", "enganar", "roubo", "falso", "scam"]
+
+# Palavras que indicam pedido de atendente humano
+PEDIDO_HUMANO = ["atendente", "humano", "pessoa", "real", "alguém", "funcionário", "gerente", "falar com alguém", "não é robô", "bot", "robozinho", "máquina", "quero falar"]
 
 # ==================== CLIENTES DE IA ====================
 
@@ -224,7 +278,7 @@ async def call_openrouter(messages: list, model: str) -> str:
         "model": model,
         "messages": messages,
         "max_tokens": 500,
-        "temperature": 0.7
+        "temperature": 0.8
     }
     
     async with aiohttp.ClientSession() as session:
@@ -241,7 +295,7 @@ async def call_openrouter(messages: list, model: str) -> str:
             data = await response.json()
             return data["choices"][0]["message"]["content"]
 
-def call_gemini(messages: list, model: str) -> str:
+def call_gemini(messages: list, model: str, system_prompt: str) -> str:
     """Chama a API do Google Gemini"""
     import google.generativeai as genai
     
@@ -253,12 +307,12 @@ def call_gemini(messages: list, model: str) -> str:
     
     gemini_model = genai.GenerativeModel(
         model_name=model,
-        system_instruction=get_system_prompt()
+        system_instruction=system_prompt
     )
     
     # Converter mensagens para formato Gemini
     history = []
-    for msg in messages[:-1]:  # Todas menos a última
+    for msg in messages[:-1]:
         role = "user" if msg["role"] == "user" else "model"
         history.append({"role": role, "parts": [msg["content"]]})
     
@@ -266,13 +320,16 @@ def call_gemini(messages: list, model: str) -> str:
     response = chat.send_message(messages[-1]["content"])
     return response.text
 
-async def generate_ai_response(mensagem: str, historico: list) -> str:
+async def generate_ai_response(mensagem: str, historico: list, modo_humano: bool = False) -> str:
     """Gera resposta usando o provedor configurado"""
     provider = config.get("provider", "openrouter")
     model = config.get("selected_model", "deepseek/deepseek-r1:free")
     
+    # Escolher prompt baseado no modo
+    system_prompt = get_human_mode_prompt() if modo_humano else get_system_prompt()
+    
     # Construir mensagens
-    messages = [{"role": "system", "content": get_system_prompt()}]
+    messages = [{"role": "system", "content": system_prompt}]
     
     for msg in historico[-10:]:
         role = "user" if msg["role"] == "user" else "assistant"
@@ -284,10 +341,10 @@ async def generate_ai_response(mensagem: str, historico: list) -> str:
         if provider == "openrouter":
             return await call_openrouter(messages, model)
         else:
-            return call_gemini(messages, model)
+            return call_gemini(messages, model, system_prompt)
     except Exception as e:
         print(f"Erro na IA ({provider}/{model}): {e}")
-        return f"Desculpe, tive um problema técnico. Por favor, acesse nosso site: {config.get('site_url', 'https://sushiakicb.shop')} 🍣"
+        return f"Desculpe, tive um probleminha técnico 😅 Mas você pode fazer seu pedido direto no site: {config.get('site_url', 'https://sushiakicb.shop')} 🍣"
 
 # ==================== ESTADO GLOBAL ====================
 conversas: Dict[str, Dict] = {}
@@ -305,12 +362,17 @@ def detecta_desconfianca(texto: str) -> bool:
     texto_lower = texto.lower()
     return any(palavra in texto_lower for palavra in DESCONFIANCA)
 
+def detecta_pedido_humano(texto: str) -> bool:
+    texto_lower = texto.lower()
+    return any(palavra in texto_lower for palavra in PEDIDO_HUMANO)
+
 def get_conversa(chat_id: str) -> Dict:
     if chat_id not in conversas:
         conversas[chat_id] = {
             "chat_id": chat_id,
             "mensagens": [],
             "humano_ativo": False,
+            "modo_humanizado": False,  # Novo: modo 100% humanizado
             "ultimo_humano": None,
             "mensagem_inicial_enviada": False,
             "objecoes_tratadas": [],
@@ -339,14 +401,28 @@ async def gerar_resposta(chat_id: str, mensagem: str) -> str:
     """Gera resposta para o cliente"""
     conversa = get_conversa(chat_id)
     
-    # Verificar desconfiança primeiro
+    # Verificar se cliente pediu atendente humano
+    if detecta_pedido_humano(mensagem):
+        conversa["modo_humanizado"] = True
+        # Gera resposta humanizada
+        resposta = await generate_ai_response(mensagem, conversa["historico_ia"], modo_humano=True)
+        # Atualizar histórico
+        conversa["historico_ia"].append({"role": "user", "content": mensagem})
+        conversa["historico_ia"].append({"role": "assistant", "content": resposta})
+        return resposta
+    
+    # Verificar desconfiança
     if detecta_desconfianca(mensagem):
         if "desconfianca" not in conversa["objecoes_tratadas"]:
             conversa["objecoes_tratadas"].append("desconfianca")
             return get_resposta_desconfianca()
     
-    # Gerar resposta com IA
-    resposta = await generate_ai_response(mensagem, conversa["historico_ia"])
+    # Gerar resposta com IA (modo normal ou humanizado)
+    resposta = await generate_ai_response(
+        mensagem, 
+        conversa["historico_ia"], 
+        modo_humano=conversa.get("modo_humanizado", False)
+    )
     
     # Atualizar histórico
     conversa["historico_ia"].append({"role": "user", "content": mensagem})
@@ -396,7 +472,10 @@ async def get_available_models():
 @app.get("/api/status")
 async def get_status():
     provider = config.get("provider", "openrouter")
-    has_api_key = bool(config.get(f"{provider}_api_key" if provider != "gemini" else "gemini_api_key"))
+    if provider == "openrouter":
+        has_api_key = bool(config.get("openrouter_api_key"))
+    else:
+        has_api_key = bool(config.get("gemini_api_key"))
     
     return {
         "whatsapp": whatsapp_status,
@@ -493,6 +572,7 @@ async def human_takeover(chat_id: str):
 async def release_to_bot(chat_id: str):
     conversa = get_conversa(chat_id)
     conversa["humano_ativo"] = False
+    conversa["modo_humanizado"] = False  # Reset modo humanizado
     await broadcast_message({"type": "bot_resumed", "chat_id": chat_id})
     return {"success": True}
 
@@ -604,8 +684,8 @@ async def test_ai():
     model = config.get("selected_model", "deepseek/deepseek-r1:free")
     
     messages = [
-        {"role": "system", "content": "Responda apenas: OK"},
-        {"role": "user", "content": "Teste"}
+        {"role": "system", "content": "Responda apenas: OK, funcionando!"},
+        {"role": "user", "content": "Teste de conexão"}
     ]
     
     try:
@@ -616,7 +696,7 @@ async def test_ai():
         else:
             if not config.get("gemini_api_key"):
                 return {"success": False, "error": "API Key do Gemini não configurada"}
-            response = call_gemini(messages, model)
+            response = call_gemini(messages, model, "Responda apenas: OK, funcionando!")
         
         return {
             "success": True, 
@@ -683,7 +763,10 @@ async def websocket_endpoint(websocket: WebSocket):
 async def startup_event():
     provider = config.get("provider", "openrouter")
     model = config.get("selected_model", "deepseek/deepseek-r1:free")
-    has_key = bool(config.get(f"{provider}_api_key" if provider != "gemini" else "gemini_api_key"))
+    if provider == "openrouter":
+        has_key = bool(config.get("openrouter_api_key"))
+    else:
+        has_key = bool(config.get("gemini_api_key"))
     
     print("=" * 60)
     print("🍣 Sushi Aki Bot - Backend iniciado")
@@ -692,6 +775,7 @@ async def startup_event():
     print(f"🧠 Modelo: {model}")
     print(f"🔑 API Key configurada: {'Sim' if has_key else 'Não'}")
     print(f"🌐 Site: {config.get('site_url', 'https://sushiakicb.shop')}")
+    print(f"🐺 Modo Lobo de Wall Street: ATIVADO")
     print("=" * 60)
 
 if __name__ == "__main__":
