@@ -11,6 +11,9 @@ Bot de WhatsApp para o restaurante de sushi "Sushiaki" para engajar clientes vin
 - **Dashboard Admin:** Painel web para QR code, conversas e configurações
 - **PWA:** Aplicativo instalável para Android/iPhone
 - **Persistência:** Configurações salvas em config.json
+- **Seletor de Provedor:** Alternar entre Gemini e OpenRouter facilmente
+- **Modo Lobo de Wall Street:** Persuasão agressiva para fechar vendas
+- **Modo Humanizado:** Bot 100% humanizado quando cliente pede atendente
 
 ### Arquitetura
 ```
@@ -22,7 +25,7 @@ Bot de WhatsApp para o restaurante de sushi "Sushiaki" para engajar clientes vin
 │   │   └── bot.js          # Node.js/Baileys
 │   └── .env
 ├── frontend/
-│   ├── src/App.js          # React SPA
+│   ├── src/App.js          # React SPA (refatorado v2.1)
 │   └── public/
 │       ├── manifest.json   # PWA
 │       └── service-worker.js
@@ -41,9 +44,12 @@ Bot de WhatsApp para o restaurante de sushi "Sushiaki" para engajar clientes vin
 - [x] Bug do QR code corrigido
 - [x] Guia de deploy Windows Server 2025
 - [x] Scripts de instalação e gerenciamento
+- [x] Bug inputs fechando (refatoração componentes)
+- [x] Seletor Gemini/OpenRouter com teste de conexão
+- [x] Modo Lobo de Wall Street - persuasão vendas
+- [x] Modo humanizado quando cliente pede atendente
 
 ### Pendente/Futuro
-- [ ] Refatorar App.js em componentes menores
 - [ ] Persistência de histórico de conversas
 - [ ] Processamento de áudio (baixa prioridade)
 
@@ -54,9 +60,9 @@ Bot de WhatsApp para o restaurante de sushi "Sushiaki" para engajar clientes vin
 | GET | /api/status | Status do bot e conversas |
 | GET | /api/config | Ler configurações |
 | POST | /api/config | Salvar configurações |
-| POST | /api/test_ai | Testar IA configurada |
+| POST | /api/test-ai | Testar IA configurada |
 | GET | /api/models | Lista de modelos disponíveis |
-| POST | /api/webhook/whatsapp | Receber mensagens do bot |
+| POST | /api/webhook/message | Receber mensagens do bot |
 
 ## Integrações de Terceiros
 - **Google Gemini:** Chave de API do usuário
@@ -68,4 +74,4 @@ Bot de WhatsApp para o restaurante de sushi "Sushiaki" para engajar clientes vin
 - Scripts: `/app/scripts/windows/`
 
 ---
-*Última atualização: Dezembro 2025*
+*Última atualização: Janeiro 2026*
