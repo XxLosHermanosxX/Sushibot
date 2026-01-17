@@ -225,6 +225,9 @@ function App() {
   
   const messagesEndRef = useRef(null);
   const errorCountRef = useRef(0);
+  const messagesContainerRef = useRef(null);
+  const lastMessageCountRef = useRef(0);
+  const userScrolledUpRef = useRef(false);
 
   // Detectar PWA
   useEffect(() => {
