@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { 
   MessageCircle, 
   Send, 
@@ -22,7 +22,6 @@ import {
   BellOff,
   Menu,
   X,
-  Smartphone,
   Share,
   Key,
   Save,
@@ -37,7 +36,7 @@ import {
   Star
 } from 'lucide-react';
 
-// Determinar URLs
+// ==================== CONFIGURAÇÃO ====================
 const getBackendUrl = () => {
   if (typeof window !== 'undefined') {
     if (window.location.hostname === 'localhost') {
@@ -60,13 +59,133 @@ const getWhatsAppBotUrl = () => {
 const BACKEND_URL = getBackendUrl();
 const WHATSAPP_BOT_URL = getWhatsAppBotUrl();
 
+// ==================== COMPONENTES ESTÁVEIS (fora do App) ====================
+
+const StatusBadge = memo(({ connected }) => (
+  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
+    connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+  }`}>
+    {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
+    {connected ? 'Online' : 'Offline'}
+  </div>
+));
+
+const InstallBanner = memo(({ isInstalled, showBanner, onClose, installPrompt, onInstall, isIOS }) => {
+  if (isInstalled || !showBanner) return null;
+  
+  return (
+    <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-red-500 to-pink-500 p-4 z-50">
+      <div className="flex items-center justify-between max-w-lg mx-auto">
+        <div className="flex items-center gap-3">
+          <div className="text-2xl">🍣</div>
+          <div>
+            <p className="font-bold text-white text-sm">Instalar App</p>
+            <p className="text-white/80 text-xs">Acesse mais rápido!</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={onClose} className="p-2 text-white/70">
+            <X size={20} />
+          </button>
+          {installPrompt ? (
+            <button onClick={onInstall} className="bg-white text-red-500 px-4 py-2 rounded-full text-sm font-bold">
+              Instalar
+            </button>
+          ) : isIOS ? (
+            <button
+              onClick={() => alert('Toque em "Compartilhar" ⬆️ e depois "Adicionar à Tela de Início"')}
+              className="bg-white text-red-500 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-1"
+            >
+              <Share size={16} /> Como instalar
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const MobileHeader = memo(({ mobileMenuOpen, setMobileMenuOpen, businessName, connected }) => (
+  <div className="lg:hidden fixed top-0 left-0 right-0 bg-gray-900 border-b border-gray-700 z-40">
+    <div className="flex items-center justify-between p-4">
+      <div className="flex items-center gap-3">
+        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 hover:bg-gray-800 rounded-lg">
+          {mobileMenuOpen ? <X size={24} className="text-white" /> : <Menu size={24} className="text-white" />}
+        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🍣</span>
+          <span className="font-bold text-white">{businessName}</span>
+        </div>
+      </div>
+      <StatusBadge connected={connected} />
+    </div>
+  </div>
+));
+
+const Sidebar = memo(({ activeTab, setActiveTab, conversasCount, connected, aiConfigured, businessName }) => (
+  <div className="hidden lg:flex w-64 bg-gray-900 border-r border-gray-700 flex-col">
+    <div className="p-6 border-b border-gray-700">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center text-xl">🍣</div>
+        <div>
+          <h1 className="font-bold text-lg text-white">{businessName}</h1>
+          <p className="text-xs text-gray-400">Bot WhatsApp</p>
+        </div>
+      </div>
+    </div>
+    
+    <nav className="flex-1 p-4">
+      <ul className="space-y-2">
+        {[
+          { id: 'dashboard', icon: QrCode, label: 'Dashboard' },
+          { id: 'conversas', icon: MessageCircle, label: 'Conversas', badge: conversasCount },
+          { id: 'configuracoes', icon: Settings, label: 'Configurações' }
+        ].map(item => (
+          <li key={item.id}>
+            <button
+              onClick={() => setActiveTab(item.id)}
+              data-testid={`nav-${item.id}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                activeTab === item.id ? 'bg-red-500 text-white' : 'text-gray-400 hover:bg-gray-800'
+              }`}
+            >
+              <item.icon size={20} />
+              {item.label}
+              {item.badge > 0 && <span className="ml-auto bg-white/20 px-2 py-0.5 rounded-full text-xs">{item.badge}</span>}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+    
+    <div className="p-4 border-t border-gray-700">
+      <StatusBadge connected={connected} />
+      {!aiConfigured && (
+        <div className="mt-3 p-2 bg-yellow-500/20 rounded-lg">
+          <p className="text-yellow-400 text-xs flex items-center gap-1">
+            <AlertCircle size={12} />
+            API não configurada
+          </p>
+        </div>
+      )}
+    </div>
+  </div>
+));
+
+const formatTime = (timestamp) => {
+  if (!timestamp) return '';
+  return new Date(timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+};
+
+// ==================== APP PRINCIPAL ====================
+
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [status, setStatus] = useState({
     whatsapp: { connected: false, qr_code: null, status_text: 'Carregando...' },
-    bot_config: { auto_reply: true, human_takeover_minutes: 60 },
+    bot_config: { auto_reply: true },
     conversas_ativas: 0,
-    gemini_configured: false
+    ai_configured: false
   });
   const [whatsappBotStatus, setWhatsappBotStatus] = useState({
     connected: false,
@@ -74,13 +193,13 @@ function App() {
     status: 'Carregando...'
   });
   const [appConfig, setAppConfig] = useState({
+    provider: 'openrouter',
     gemini_api_key_set: false,
     gemini_api_key_preview: '',
     openrouter_api_key_set: false,
     openrouter_api_key_preview: '',
     selected_model: 'deepseek/deepseek-r1:free',
     auto_reply: true,
-    human_takeover_minutes: 60,
     site_url: 'https://sushiakicb.shop',
     business_name: 'Sushi Aki'
   });
@@ -89,14 +208,14 @@ function App() {
   const [selectedChat, setSelectedChat] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [connectionError, setConnectionError] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   
-  // Estados para configuração
+  // Estados para configuração - SEPARADOS para evitar re-render
   const [newGeminiKey, setNewGeminiKey] = useState('');
   const [newOpenRouterKey, setNewOpenRouterKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
@@ -105,6 +224,7 @@ function App() {
   const [testingAI, setTestingAI] = useState(false);
   
   const messagesEndRef = useRef(null);
+  const errorCountRef = useRef(0);
 
   // Detectar PWA
   useEffect(() => {
@@ -160,34 +280,53 @@ function App() {
     }
   };
 
-  // Buscar status
+  // Buscar status - com tratamento de erro melhorado
   const fetchStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/status`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(`${BACKEND_URL}/api/status`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
       if (response.ok) {
         const data = await response.json();
         setStatus(data);
-        setError(null);
+        setConnectionError(false);
+        errorCountRef.current = 0;
       }
     } catch (err) {
-      setError('Erro de conexão');
+      errorCountRef.current++;
+      // Só mostra erro após 3 falhas consecutivas
+      if (errorCountRef.current >= 3) {
+        setConnectionError(true);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Buscar status do bot WhatsApp diretamente
+  // Buscar status do bot WhatsApp
   const fetchWhatsAppBotStatus = useCallback(async () => {
     if (!WHATSAPP_BOT_URL) return;
     
     try {
-      const response = await fetch(`${WHATSAPP_BOT_URL}/qr-data`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      
+      const response = await fetch(`${WHATSAPP_BOT_URL}/qr-data`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
       if (response.ok) {
         const data = await response.json();
         setWhatsappBotStatus(data);
       }
     } catch (err) {
-      console.log('Bot WhatsApp não acessível diretamente');
+      // Silencioso - bot pode não estar acessível
     }
   }, []);
 
@@ -224,23 +363,6 @@ function App() {
       if (response.ok) {
         const data = await response.json();
         const newConversas = data.conversas || [];
-        
-        if (notificationsEnabled && conversas.length > 0) {
-          newConversas.forEach(conv => {
-            const oldConv = conversas.find(c => c.chat_id === conv.chat_id);
-            if (oldConv && conv.mensagens?.length > oldConv.mensagens?.length) {
-              const lastMsg = conv.mensagens[conv.mensagens.length - 1];
-              if (lastMsg.from === 'cliente') {
-                new Notification('Nova mensagem', {
-                  body: `${conv.nome_cliente}: ${lastMsg.text.substring(0, 50)}...`,
-                  icon: '/icons/icon-192x192.png',
-                  tag: conv.chat_id
-                });
-              }
-            }
-          });
-        }
-        
         setConversas(newConversas);
         
         if (selectedChat) {
@@ -251,7 +373,7 @@ function App() {
     } catch (err) {
       console.error('Erro conversas:', err);
     }
-  }, [selectedChat, conversas, notificationsEnabled]);
+  }, [selectedChat]);
 
   useEffect(() => {
     fetchStatus();
@@ -264,7 +386,7 @@ function App() {
       fetchStatus();
       fetchConversas();
       fetchWhatsAppBotStatus();
-    }, 2000);
+    }, 3000); // Aumentado para 3s para reduzir carga
     
     return () => clearInterval(interval);
   }, [fetchStatus, fetchConfig, fetchModels, fetchConversas, fetchWhatsAppBotStatus]);
@@ -274,7 +396,7 @@ function App() {
   }, [selectedChat?.mensagens]);
 
   // Salvar configuração
-  const saveConfig = async (configData) => {
+  const saveConfig = useCallback(async (configData) => {
     setSavingConfig(true);
     setConfigMessage(null);
     
@@ -289,8 +411,7 @@ function App() {
         const data = await response.json();
         setAppConfig(data.config);
         setConfigMessage({ type: 'success', text: 'Configuração salva!' });
-        setNewApiKey('');
-        fetchStatus();
+        setTimeout(() => setConfigMessage(null), 3000);
       } else {
         setConfigMessage({ type: 'error', text: 'Erro ao salvar' });
       }
@@ -299,30 +420,30 @@ function App() {
     } finally {
       setSavingConfig(false);
     }
-  };
+  }, []);
 
   // Salvar API Keys
-  const saveGeminiKey = () => {
+  const saveGeminiKey = useCallback(() => {
     if (newGeminiKey.trim()) {
       saveConfig({ gemini_api_key: newGeminiKey.trim() });
       setNewGeminiKey('');
     }
-  };
+  }, [newGeminiKey, saveConfig]);
 
-  const saveOpenRouterKey = () => {
+  const saveOpenRouterKey = useCallback(() => {
     if (newOpenRouterKey.trim()) {
       saveConfig({ openrouter_api_key: newOpenRouterKey.trim() });
       setNewOpenRouterKey('');
     }
-  };
+  }, [newOpenRouterKey, saveConfig]);
 
   // Toggle auto reply
-  const toggleAutoReply = () => {
+  const toggleAutoReply = useCallback(() => {
     saveConfig({ auto_reply: !appConfig.auto_reply });
-  };
+  }, [appConfig.auto_reply, saveConfig]);
 
   // Testar IA
-  const testAI = async () => {
+  const testAI = useCallback(async () => {
     setTestingAI(true);
     setConfigMessage(null);
     
@@ -333,7 +454,7 @@ function App() {
       if (data.success) {
         setConfigMessage({ 
           type: 'success', 
-          text: `✅ ${data.provider.toUpperCase()} funcionando! Modelo: ${data.model}` 
+          text: `✅ ${data.provider?.toUpperCase()} funcionando! Modelo: ${data.model}` 
         });
       } else {
         setConfigMessage({ type: 'error', text: `❌ Erro: ${data.error}` });
@@ -343,10 +464,10 @@ function App() {
     } finally {
       setTestingAI(false);
     }
-  };
+  }, []);
 
   // Enviar mensagem
-  const sendMessage = async () => {
+  const sendMessage = useCallback(async () => {
     if (!newMessage.trim() || !selectedChat) return;
     
     try {
@@ -363,10 +484,10 @@ function App() {
     } catch (err) {
       console.error('Erro:', err);
     }
-  };
+  }, [newMessage, selectedChat, fetchConversas]);
 
   // Takeover
-  const toggleHumanTakeover = async (chatId, isHuman) => {
+  const toggleHumanTakeover = useCallback(async (chatId, isHuman) => {
     try {
       const endpoint = isHuman ? 'release' : 'takeover';
       await fetch(`${BACKEND_URL}/api/${endpoint}/${chatId}`, { method: 'POST' });
@@ -374,10 +495,10 @@ function App() {
     } catch (err) {
       console.error('Erro:', err);
     }
-  };
+  }, [fetchConversas]);
 
   // Deletar conversa
-  const deleteConversa = async (chatId) => {
+  const deleteConversa = useCallback(async (chatId) => {
     if (window.confirm('Deletar esta conversa?')) {
       try {
         await fetch(`${BACKEND_URL}/api/conversa/${chatId}`, { method: 'DELETE' });
@@ -387,82 +508,15 @@ function App() {
         console.error('Erro:', err);
       }
     }
-  };
-
-  const formatTime = (timestamp) => {
-    if (!timestamp) return '';
-    return new Date(timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  };
+  }, [selectedChat, fetchConversas]);
 
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isAndroid = /Android/.test(navigator.userAgent);
+  const isWhatsAppConnected = status.whatsapp?.connected || whatsappBotStatus.connected;
+  const currentQRCode = status.whatsapp?.qr_code || whatsappBotStatus.qr;
+  const whatsappStatusText = whatsappBotStatus.connected ? 'Conectado!' : (whatsappBotStatus.status || status.whatsapp?.status_text);
 
-  // Status Badge
-  const StatusBadge = ({ connected }) => (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
-      connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-    }`}>
-      {connected ? <Wifi size={14} /> : <WifiOff size={14} />}
-      {connected ? 'Online' : 'Offline'}
-    </div>
-  );
-
-  // Install Banner
-  const InstallBanner = () => {
-    if (isInstalled || !showInstallBanner) return null;
-    
-    return (
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-red-500 to-pink-500 p-4 z-50">
-        <div className="flex items-center justify-between max-w-lg mx-auto">
-          <div className="flex items-center gap-3">
-            <div className="text-2xl">🍣</div>
-            <div>
-              <p className="font-bold text-white text-sm">Instalar App</p>
-              <p className="text-white/80 text-xs">Acesse mais rápido!</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowInstallBanner(false)} className="p-2 text-white/70">
-              <X size={20} />
-            </button>
-            {installPrompt ? (
-              <button onClick={handleInstall} className="bg-white text-red-500 px-4 py-2 rounded-full text-sm font-bold">
-                Instalar
-              </button>
-            ) : isIOS ? (
-              <button
-                onClick={() => alert('Toque em "Compartilhar" ⬆️ e depois "Adicionar à Tela de Início"')}
-                className="bg-white text-red-500 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-1"
-              >
-                <Share size={16} /> Como instalar
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Mobile Header
-  const MobileHeader = () => (
-    <div className="lg:hidden fixed top-0 left-0 right-0 bg-gray-900 border-b border-gray-700 z-40">
-      <div className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 hover:bg-gray-800 rounded-lg">
-            {mobileMenuOpen ? <X size={24} className="text-white" /> : <Menu size={24} className="text-white" />}
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🍣</span>
-            <span className="font-bold text-white">{appConfig.business_name || 'Sushi Aki'}</span>
-          </div>
-        </div>
-        <StatusBadge connected={status.whatsapp.connected} />
-      </div>
-    </div>
-  );
-
-  // Mobile Menu
-  const MobileMenu = () => {
+  // ==================== MOBILE MENU ====================
+  const renderMobileMenu = () => {
     if (!mobileMenuOpen) return null;
     
     return (
@@ -517,81 +571,26 @@ function App() {
     );
   };
 
-  // Sidebar Desktop
-  const Sidebar = () => (
-    <div className="hidden lg:flex w-64 bg-gray-900 border-r border-gray-700 flex-col">
-      <div className="p-6 border-b border-gray-700">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center text-xl">🍣</div>
-          <div>
-            <h1 className="font-bold text-lg text-white">{appConfig.business_name || 'Sushi Aki'}</h1>
-            <p className="text-xs text-gray-400">Bot WhatsApp</p>
-          </div>
-        </div>
-      </div>
-      
-      <nav className="flex-1 p-4">
-        <ul className="space-y-2">
-          {[
-            { id: 'dashboard', icon: QrCode, label: 'Dashboard' },
-            { id: 'conversas', icon: MessageCircle, label: 'Conversas', badge: conversas.length },
-            { id: 'configuracoes', icon: Settings, label: 'Configurações' }
-          ].map(item => (
-            <li key={item.id}>
-              <button
-                onClick={() => setActiveTab(item.id)}
-                data-testid={`nav-${item.id}`}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                  activeTab === item.id ? 'bg-red-500 text-white' : 'text-gray-400 hover:bg-gray-800'
-                }`}
-              >
-                <item.icon size={20} />
-                {item.label}
-                {item.badge > 0 && <span className="ml-auto bg-white/20 px-2 py-0.5 rounded-full text-xs">{item.badge}</span>}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </nav>
-      
-      <div className="p-4 border-t border-gray-700">
-        <StatusBadge connected={status.whatsapp.connected || whatsappBotStatus.connected} />
-        {!status.gemini_configured && (
-          <div className="mt-3 p-2 bg-yellow-500/20 rounded-lg">
-            <p className="text-yellow-400 text-xs flex items-center gap-1">
-              <AlertCircle size={12} />
-              API Gemini não configurada
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  // Determinar status real do WhatsApp (combinar backend + bot direto)
-  const isWhatsAppConnected = status.whatsapp.connected || whatsappBotStatus.connected;
-  const currentQRCode = status.whatsapp.qr_code || whatsappBotStatus.qr;
-  const whatsappStatusText = whatsappBotStatus.connected ? 'Conectado!' : (whatsappBotStatus.status || status.whatsapp.status_text);
-
-  // Dashboard View
-  const DashboardView = () => (
+  // ==================== DASHBOARD VIEW ====================
+  const renderDashboard = () => (
     <div className="p-4 lg:p-8">
       <h2 className="text-xl lg:text-2xl font-bold mb-6 text-white">Dashboard</h2>
       
-      {error && (
-        <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400 text-sm">
-          {error}
+      {connectionError && (
+        <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-xl text-yellow-400 text-sm flex items-center gap-2">
+          <AlertCircle size={16} />
+          Reconectando ao servidor...
         </div>
       )}
       
-      {!status.gemini_configured && (
+      {!status.ai_configured && (
         <div className="mb-6 p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-xl">
           <div className="flex items-start gap-3">
             <AlertCircle className="text-yellow-400 flex-shrink-0 mt-0.5" size={20} />
             <div>
-              <p className="text-yellow-400 font-medium">API do Gemini não configurada</p>
+              <p className="text-yellow-400 font-medium">API de IA não configurada</p>
               <p className="text-yellow-400/70 text-sm mt-1">
-                Vá em Configurações para adicionar sua API Key do Google Gemini
+                Vá em Configurações para adicionar sua API Key
               </p>
               <button
                 onClick={() => setActiveTab('configuracoes')}
@@ -678,7 +677,6 @@ function App() {
                   <RefreshCw size={32} className="text-gray-500 animate-spin" />
                 </div>
                 <p className="text-gray-500 text-sm">Aguardando QR Code...</p>
-                <p className="text-gray-600 text-xs">Certifique-se que o bot WhatsApp está rodando</p>
               </div>
             )}
             
@@ -701,17 +699,14 @@ function App() {
             </div>
             <h3 className="text-lg lg:text-xl font-bold text-green-400 mb-2">WhatsApp Conectado!</h3>
             <p className="text-gray-400 text-sm">O bot está respondendo automaticamente</p>
-            {(status.whatsapp.phone_number || whatsappBotStatus.phone_number) && (
-              <p className="text-gray-500 mt-2 text-sm">Número: {status.whatsapp.phone_number || whatsappBotStatus.phone_number}</p>
-            )}
           </div>
         </div>
       )}
     </div>
   );
 
-  // Conversas View
-  const ConversasView = () => (
+  // ==================== CONVERSAS VIEW ====================
+  const renderConversas = () => (
     <div className="flex h-full">
       <div className={`w-full lg:w-80 bg-gray-900 border-r border-gray-700 flex flex-col ${
         selectedChat ? 'hidden lg:flex' : 'flex'
@@ -731,33 +726,29 @@ function App() {
             conversas.map((conversa) => (
               <div
                 key={conversa.chat_id}
-                className={`p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors ${
+                className={`p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors cursor-pointer ${
                   selectedChat?.chat_id === conversa.chat_id ? 'bg-gray-800' : ''
                 }`}
+                onClick={() => setSelectedChat(conversa)}
               >
-                <button
-                  onClick={() => setSelectedChat(conversa)}
-                  className="w-full text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center">
-                      <User size={20} className="text-red-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium truncate text-white text-sm">{conversa.nome_cliente}</p>
-                        {conversa.humano_ativo && (
-                          <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
-                            Humano
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-400 truncate">
-                        {conversa.mensagens?.slice(-1)[0]?.text || 'Nova conversa'}
-                      </p>
-                    </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center">
+                    <User size={20} className="text-red-400" />
                   </div>
-                </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium truncate text-white text-sm">{conversa.nome_cliente}</p>
+                      {conversa.humano_ativo && (
+                        <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
+                          Humano
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 truncate">
+                      {conversa.mensagens?.slice(-1)[0]?.text || 'Nova conversa'}
+                    </p>
+                  </div>
+                </div>
               </div>
             ))
           )}
@@ -839,6 +830,7 @@ function App() {
                   onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                   placeholder="Digite uma mensagem..."
                   className="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-red-500 text-sm"
+                  data-testid="chat-message-input"
                 />
                 <button onClick={sendMessage} className="p-2.5 bg-red-500 hover:bg-red-600 rounded-xl">
                   <Send size={18} className="text-white" />
@@ -858,8 +850,8 @@ function App() {
     </div>
   );
 
-  // Configurações View
-  const ConfiguracoesView = () => (
+  // ==================== CONFIGURAÇÕES VIEW ====================
+  const renderConfiguracoes = () => (
     <div className="p-4 lg:p-8 max-w-2xl overflow-y-auto h-full">
       <h2 className="text-xl lg:text-2xl font-bold mb-6 text-white">Configurações</h2>
       
@@ -884,12 +876,14 @@ function App() {
           
           <div className="grid grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => saveConfig({ provider: 'openrouter' })}
-              className={`p-4 rounded-xl border-2 transition-all ${
+              className={`p-4 rounded-xl border-2 transition-all text-left ${
                 appConfig.provider === 'openrouter'
                   ? 'border-purple-500 bg-purple-500/20'
                   : 'border-gray-600 bg-gray-800 hover:border-gray-500'
               }`}
+              data-testid="provider-openrouter"
             >
               <div className="flex items-center gap-2 mb-2">
                 <Zap size={20} className={appConfig.provider === 'openrouter' ? 'text-purple-400' : 'text-gray-400'} />
@@ -903,12 +897,14 @@ function App() {
             </button>
             
             <button
+              type="button"
               onClick={() => saveConfig({ provider: 'gemini' })}
-              className={`p-4 rounded-xl border-2 transition-all ${
+              className={`p-4 rounded-xl border-2 transition-all text-left ${
                 appConfig.provider === 'gemini'
                   ? 'border-blue-500 bg-blue-500/20'
                   : 'border-gray-600 bg-gray-800 hover:border-gray-500'
               }`}
+              data-testid="provider-gemini"
             >
               <div className="flex items-center gap-2 mb-2">
                 <Bot size={20} className={appConfig.provider === 'gemini' ? 'text-blue-400' : 'text-gray-400'} />
@@ -953,6 +949,7 @@ function App() {
                   onChange={(e) => setNewOpenRouterKey(e.target.value)}
                   placeholder="Cole sua API Key do OpenRouter..."
                   className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 pr-12 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm"
+                  data-testid="openrouter-api-key-input"
                 />
                 <button
                   type="button"
@@ -965,18 +962,22 @@ function App() {
               
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={saveOpenRouterKey}
                   disabled={!newOpenRouterKey.trim() || savingConfig}
                   className="flex-1 bg-purple-500 hover:bg-purple-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2"
+                  data-testid="save-openrouter-key"
                 >
                   {savingConfig ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
                   Salvar
                 </button>
                 
                 <button
+                  type="button"
                   onClick={testAI}
                   disabled={!appConfig.openrouter_api_key_set || testingAI}
                   className="bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl font-medium text-sm flex items-center gap-2"
+                  data-testid="test-ai-button"
                 >
                   {testingAI ? <RefreshCw size={16} className="animate-spin" /> : <Bot size={16} />}
                   Testar
@@ -1026,6 +1027,7 @@ function App() {
                   onChange={(e) => setNewGeminiKey(e.target.value)}
                   placeholder="Cole sua API Key do Gemini..."
                   className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 pr-12 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+                  data-testid="gemini-api-key-input"
                 />
                 <button
                   type="button"
@@ -1038,18 +1040,22 @@ function App() {
               
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={saveGeminiKey}
                   disabled={!newGeminiKey.trim() || savingConfig}
                   className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2"
+                  data-testid="save-gemini-key"
                 >
                   {savingConfig ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
                   Salvar
                 </button>
                 
                 <button
+                  type="button"
                   onClick={testAI}
                   disabled={!appConfig.gemini_api_key_set || testingAI}
                   className="bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl font-medium text-sm flex items-center gap-2"
+                  data-testid="test-gemini-button"
                 >
                   {testingAI ? <RefreshCw size={16} className="animate-spin" /> : <Bot size={16} />}
                   Testar
@@ -1080,6 +1086,7 @@ function App() {
             value={appConfig.selected_model}
             onChange={(e) => saveConfig({ selected_model: e.target.value })}
             className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-cyan-500 mb-3"
+            data-testid="model-select"
           >
             {appConfig.provider === 'openrouter' && (
               <optgroup label="🆓 Modelos Gratuitos (OpenRouter)">
@@ -1115,7 +1122,7 @@ function App() {
               <h3 className="font-bold text-white text-sm lg:text-base">Resposta Automática</h3>
               <p className="text-xs lg:text-sm text-gray-400 mt-1">Bot responde automaticamente</p>
             </div>
-            <button onClick={toggleAutoReply} disabled={savingConfig}>
+            <button type="button" onClick={toggleAutoReply} disabled={savingConfig}>
               {appConfig.auto_reply 
                 ? <ToggleRight size={36} className="text-green-500" />
                 : <ToggleLeft size={36} className="text-gray-500" />
@@ -1131,7 +1138,7 @@ function App() {
               <h3 className="font-bold text-white text-sm lg:text-base">Notificações Push</h3>
               <p className="text-xs lg:text-sm text-gray-400 mt-1">Alertas de novas mensagens</p>
             </div>
-            <button onClick={notificationsEnabled ? () => {} : requestNotifications}>
+            <button type="button" onClick={notificationsEnabled ? () => {} : requestNotifications}>
               {notificationsEnabled 
                 ? <Bell size={24} className="text-green-400" />
                 : <BellOff size={24} className="text-gray-500" />
@@ -1146,7 +1153,7 @@ function App() {
           <div className="space-y-2 text-xs lg:text-sm">
             <div className="flex justify-between">
               <span className="text-gray-400">Versão</span>
-              <span className="text-white">2.0.0 (PWA)</span>
+              <span className="text-white">2.1.0 (PWA)</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Provedor IA</span>
@@ -1176,6 +1183,7 @@ function App() {
     </div>
   );
 
+  // ==================== LOADING ====================
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900">
@@ -1188,19 +1196,39 @@ function App() {
     );
   }
 
+  // ==================== RENDER PRINCIPAL ====================
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-900" data-testid="sushiaki-bot-app">
-      <MobileHeader />
-      <MobileMenu />
-      <Sidebar />
+      <MobileHeader 
+        mobileMenuOpen={mobileMenuOpen}
+        setMobileMenuOpen={setMobileMenuOpen}
+        businessName={appConfig.business_name || 'Sushi Aki'}
+        connected={isWhatsAppConnected}
+      />
+      {renderMobileMenu()}
+      <Sidebar 
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        conversasCount={conversas.length}
+        connected={isWhatsAppConnected}
+        aiConfigured={status.ai_configured}
+        businessName={appConfig.business_name || 'Sushi Aki'}
+      />
       
       <main className="flex-1 overflow-hidden pt-16 lg:pt-0 h-screen lg:h-auto" style={{ paddingBottom: showInstallBanner ? '80px' : '0' }}>
-        {activeTab === 'dashboard' && <DashboardView />}
-        {activeTab === 'conversas' && <ConversasView />}
-        {activeTab === 'configuracoes' && <ConfiguracoesView />}
+        {activeTab === 'dashboard' && renderDashboard()}
+        {activeTab === 'conversas' && renderConversas()}
+        {activeTab === 'configuracoes' && renderConfiguracoes()}
       </main>
       
-      <InstallBanner />
+      <InstallBanner 
+        isInstalled={isInstalled}
+        showBanner={showInstallBanner}
+        onClose={() => setShowInstallBanner(false)}
+        installPrompt={installPrompt}
+        onInstall={handleInstall}
+        isIOS={isIOS}
+      />
     </div>
   );
 }
