@@ -885,7 +885,7 @@ function App() {
 
   // ==================== CONFIGURAÇÕES VIEW ====================
   const renderConfiguracoes = () => (
-    <div className="p-4 lg:p-8 max-w-2xl overflow-y-auto h-full">
+    <div className="p-4 lg:p-8 max-w-2xl overflow-y-auto h-full overscroll-contain">
       <h2 className="text-xl lg:text-2xl font-bold mb-6 text-white">Configurações</h2>
       
       {configMessage && (
