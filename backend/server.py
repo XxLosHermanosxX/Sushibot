@@ -576,15 +576,50 @@ async def release_to_bot(chat_id: str):
     await broadcast_message({"type": "bot_resumed", "chat_id": chat_id})
     return {"success": True}
 
+# URL do bot WhatsApp (Node.js)
+WHATSAPP_BOT_URL = os.getenv("WHATSAPP_BOT_URL", "http://localhost:3001")
+
+async def send_to_whatsapp(chat_id: str, message: str) -> dict:
+    """Envia mensagem para o WhatsApp através do bot Node.js"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{WHATSAPP_BOT_URL}/send-message",
+                json={"chat_id": chat_id, "message": message},
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return result
+                else:
+                    error_text = await response.text()
+                    return {"success": False, "error": f"Erro {response.status}: {error_text}"}
+    except aiohttp.ClientError as e:
+        return {"success": False, "error": f"Erro de conexão: {str(e)}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @app.post("/api/send-message")
 async def send_manual_message(request: ManualMessageRequest):
+    """Envia mensagem manual do painel para o WhatsApp"""
     conversa = get_conversa(request.chat_id)
     
+    # Enviar para o WhatsApp de verdade!
+    whatsapp_result = await send_to_whatsapp(request.chat_id, request.message)
+    
+    if not whatsapp_result.get("success"):
+        return {
+            "success": False, 
+            "error": whatsapp_result.get("error", "Falha ao enviar para WhatsApp")
+        }
+    
+    # Salvar mensagem no histórico
     msg = {
         "id": f"manual_{datetime.now().timestamp()}",
         "from": "humano",
         "text": request.message,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "whatsapp_id": whatsapp_result.get("messageId")
     }
     conversa["mensagens"].append(msg)
     conversa["humano_ativo"] = True
