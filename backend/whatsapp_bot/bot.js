@@ -1,6 +1,7 @@
 /**
  * SUSHI AKI BOT - WhatsApp com Baileys
  * Conecta ao WhatsApp e envia mensagens para o backend Python
+ * Agora com suporte para envio de mensagens do painel!
  */
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
@@ -36,7 +37,6 @@ async function notifyBackend(endpoint, data) {
         });
         return response.data;
     } catch (error) {
-        // Silenciar erros de conexão recusada (backend pode estar reiniciando)
         if (error.code !== 'ECONNREFUSED') {
             console.error(`Erro ao notificar backend: ${error.message}`);
         }
@@ -55,23 +55,55 @@ async function syncStatusWithBackend() {
     await notifyBackend('status', statusData);
 }
 
-// Iniciar sincronização periódica
 setInterval(syncStatusWithBackend, 5000);
 
-// Processamento de mensagens
+// ==================== ENVIAR MENSAGEM PARA WHATSAPP ====================
+async function enviarMensagemWhatsApp(chatId, mensagem) {
+    if (!sock || !isConnected) {
+        return { success: false, error: 'WhatsApp não conectado' };
+    }
+    
+    try {
+        // Garantir formato correto do chatId
+        let jid = chatId;
+        if (!jid.includes('@')) {
+            jid = jid + '@s.whatsapp.net';
+        }
+        
+        // Simular digitação
+        try {
+            await sock.sendPresenceUpdate('composing', jid);
+            await delay(500 + Math.random() * 1000);
+            await sock.sendPresenceUpdate('paused', jid);
+        } catch (e) {}
+        
+        // Enviar mensagem
+        const result = await sock.sendMessage(jid, { text: mensagem });
+        
+        console.log(`\x1b[35m[PAINEL -> ${jid.split('@')[0]}] ${mensagem.substring(0, 50)}${mensagem.length > 50 ? '...' : ''}\x1b[0m`);
+        
+        return { 
+            success: true, 
+            messageId: result?.key?.id,
+            timestamp: Date.now()
+        };
+    } catch (error) {
+        console.error(`\x1b[31mErro ao enviar mensagem: ${error.message}\x1b[0m`);
+        return { success: false, error: error.message };
+    }
+}
+
+// Processamento de mensagens recebidas
 async function processarMensagem(msg) {
     try {
-        // Ignorar mensagens de grupo e status
         if (!msg.key.remoteJid || msg.key.remoteJid.endsWith('@g.us') || msg.key.remoteJid === 'status@broadcast') {
             return;
         }
         
-        // Ignorar mensagens próprias
         if (msg.key.fromMe) {
             return;
         }
         
-        // Extrair texto da mensagem
         const texto = msg.message?.conversation || 
                       msg.message?.extendedTextMessage?.text ||
                       msg.message?.imageMessage?.caption ||
@@ -81,14 +113,12 @@ async function processarMensagem(msg) {
             return;
         }
         
-        // Evitar duplicatas
         const msgId = msg.key.id;
         if (mensagensProcessadas.has(msgId)) {
             return;
         }
         mensagensProcessadas.add(msgId);
         
-        // Limitar tamanho do set
         if (mensagensProcessadas.size > 1000) {
             const iterator = mensagensProcessadas.values();
             for (let i = 0; i < 500; i++) {
@@ -99,19 +129,16 @@ async function processarMensagem(msg) {
         const chatId = msg.key.remoteJid;
         console.log(`\n\x1b[34m[CLIENTE ${chatId.split('@')[0]}] ${texto.substring(0, 100)}${texto.length > 100 ? '...' : ''}\x1b[0m`);
         
-        // Enviar para backend e obter resposta
         const result = await notifyBackend('message', {
             chat_id: chatId,
             message: texto
         });
         
         if (result && result.response) {
-            // Simular digitação
             try {
                 await sock.sendPresenceUpdate('composing', chatId);
             } catch (e) {}
             
-            // Delay humanizado (1.5 a 3 segundos)
             const delayMs = 1500 + Math.random() * 1500;
             await delay(delayMs);
             
@@ -119,7 +146,6 @@ async function processarMensagem(msg) {
                 await sock.sendPresenceUpdate('paused', chatId);
             } catch (e) {}
             
-            // Enviar resposta
             await sock.sendMessage(chatId, { text: result.response });
             console.log(`\x1b[32m[BOT] Resposta enviada para ${chatId.split('@')[0]}\x1b[0m`);
         }
@@ -129,7 +155,7 @@ async function processarMensagem(msg) {
     }
 }
 
-// Servidor web para QR Code com CORS
+// ==================== SERVIDOR HTTP COM API ====================
 const server = http.createServer(async (req, res) => {
     // Headers CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -142,6 +168,33 @@ const server = http.createServer(async (req, res) => {
         return;
     }
     
+    // ========== ENDPOINT PARA ENVIAR MENSAGEM ==========
+    if (req.url === '/send-message' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', async () => {
+            try {
+                const { chat_id, message } = JSON.parse(body);
+                
+                if (!chat_id || !message) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: false, error: 'chat_id e message são obrigatórios' }));
+                    return;
+                }
+                
+                const result = await enviarMensagemWhatsApp(chat_id, message);
+                
+                res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(result));
+            } catch (error) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: 'JSON inválido' }));
+            }
+        });
+        return;
+    }
+    
+    // Página QR Code
     if (req.url === '/' || req.url === '/qr-page') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(`
@@ -306,7 +359,6 @@ async function conectarWhatsApp() {
             isConnected = false;
             connectionStatus = 'Escaneie o QR Code';
             
-            // Gerar data URL do QR
             try {
                 currentQRDataUrl = await QRCode.toDataURL(qr, { 
                     width: 300, 
@@ -322,7 +374,6 @@ async function conectarWhatsApp() {
             console.log(`\x1b[33m   Acesse http://localhost:${PORT} para escanear\x1b[0m`);
             console.log('\x1b[33m════════════════════════════════════════════════════════\x1b[0m\n');
             
-            // Notificar backend
             await syncStatusWithBackend();
         }
         
@@ -339,7 +390,6 @@ async function conectarWhatsApp() {
             console.log('\x1b[32m════════════════════════════════════════════════════════\x1b[0m');
             console.log('\n\x1b[32m🤖 BOT ATIVO - Monitorando conversas...\x1b[0m\n');
             
-            // Notificar backend
             await syncStatusWithBackend();
         }
         
@@ -352,7 +402,6 @@ async function conectarWhatsApp() {
             isConnected = false;
             phoneNumber = null;
             
-            // Notificar backend
             await notifyBackend('status', {
                 connected: false,
                 qr_code: null,
@@ -396,17 +445,17 @@ async function main() {
     console.log('╔══════════════════════════════════════════════════════════════╗');
     console.log('║                                                              ║');
     console.log('║   🍣 SUSHI AKI BOT - INICIANDO                              ║');
+    console.log('║   📤 Envio de mensagens do painel HABILITADO                ║');
     console.log('║                                                              ║');
     console.log('╚══════════════════════════════════════════════════════════════╝');
     console.log('\n');
     
-    // Iniciar servidor web
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`\x1b[36m🌐 Servidor QR Code: http://localhost:${PORT}\x1b[0m`);
+        console.log(`\x1b[36m📤 Endpoint envio: POST http://localhost:${PORT}/send-message\x1b[0m`);
         console.log(`\x1b[36m🔗 Backend URL: ${BACKEND_URL}\x1b[0m\n`);
     });
     
-    // Conectar WhatsApp
     console.log('\x1b[36mIniciando conexão com WhatsApp...\x1b[0m\n');
     await conectarWhatsApp();
 }
@@ -426,5 +475,4 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error(`\x1b[31mPromise rejeitada: ${reason}\x1b[0m`);
 });
 
-// Iniciar
 main();
