@@ -745,7 +745,7 @@ function App() {
           <p className="text-sm text-gray-400">{conversas.length} ativas</p>
         </div>
         
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto overscroll-contain">
           {conversas.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               <MessageCircle size={48} className="mx-auto mb-4 opacity-50" />
